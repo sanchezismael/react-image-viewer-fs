@@ -1,0 +1,5 @@
+{
+  "name": "React Image Viewer",
+  "description": "A web application to view, zoom, and pan local images with mouse and touch support. Select an image from your computer to begin.",
+  "requestFramePermissions": []
+}
