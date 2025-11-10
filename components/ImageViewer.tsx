@@ -265,11 +265,10 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   return (
     <div
       ref={viewerRef}
-      className={`relative mx-auto overflow-hidden touch-none select-none bg-black ${viewerCursorClass}`}
+      className={`relative overflow-hidden touch-none select-none bg-black ${viewerCursorClass}`}
       style={{
-        aspectRatio,
-        width: '90%',
-        maxWidth: '90vh',
+        width: '100%',
+        height: '100%',
       }}
       onWheel={isDrawingMode ? undefined : handleWheel}
       onMouseDown={handleMouseDown}

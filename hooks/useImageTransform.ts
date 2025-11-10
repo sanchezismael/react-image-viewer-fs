@@ -47,10 +47,20 @@ export const useImageTransform = (
         const { width: naturalWidth, height: naturalHeight } = imageDimensions;
         if (naturalWidth === 0 || naturalHeight === 0) return;
 
-        // Since the viewer has the same aspect ratio as the image, we can just use the width ratio for scale.
-        const initialScale = rect.width / naturalWidth;
+        // Calculate scale to fit and center the image in the viewer
+        const scaleX = rect.width / naturalWidth;
+        const scaleY = rect.height / naturalHeight;
+        const initialScale = Math.min(scaleX, scaleY);
         
-        const initialState = { scale: initialScale, x: 0, y: 0 };
+        // Calculate scaled dimensions
+        const scaledWidth = naturalWidth * initialScale;
+        const scaledHeight = naturalHeight * initialScale;
+        
+        // Center the image in the viewer
+        const offsetX = (rect.width - scaledWidth) / 2;
+        const offsetY = (rect.height - scaledHeight) / 2;
+        
+        const initialState = { scale: initialScale, x: offsetX, y: offsetY };
         setTransform(initialState);
         initialTransformRef.current = initialState;
         setIsPositioned(true);
