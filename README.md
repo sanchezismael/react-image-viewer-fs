@@ -2,19 +2,66 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# React Image Viewer with File System Backend
 
-This contains everything you need to run your app locally.
+Image annotation tool with polygon drawing, timer tracking, and local file system integration.
 
-View your app in AI Studio: https://ai.studio/apps/drive/12Wf2bdYZzl5xyeoQd416XrYVC1u--OEX
+## Features
 
-## Run Locally
+- 🖼️ **Direct File System Access**: Browse and load images from local directories without uploads
+- ⏱️ **Time Tracking**: Automatic timer for annotation time (total and active time)
+- ✏️ **Polygon Annotations**: Draw and edit polygon annotations on images
+- 🎨 **Custom Classes**: Define multiple annotation classes with custom colors
+- 💾 **Auto-save**: Automatically saves JSON annotations and PNG masks to source directory
+- 📊 **Statistics**: Real-time pixel statistics and completion progress
+- 🎊 **Completion Tracking**: Mark images as complete with confetti animation
+- 🔍 **Zoom & Pan**: Full image navigation with mouse and keyboard
 
-**Prerequisites:**  Node.js
+## Quick Start
 
+### Option 1: Double-click Launcher (Easiest)
+
+Simply double-click on:
+- **`start-app.bat`** (Windows Batch)
+- **`start-app.ps1`** (PowerShell - right-click → Run with PowerShell)
+
+### Option 2: Manual Start
+
+**Prerequisites:** Node.js and WSL (Windows Subsystem for Linux)
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. Run the application:
+   ```bash
+   npm run dev
+   ```
+
+3. Open your browser:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001
+
+## Usage
+
+1. Click **"Select Folder"** to browse your local file system
+2. Navigate to a folder containing images
+3. Click **"Select"** to load all images from that folder
+4. Add annotation classes and start drawing polygons
+5. Use arrow keys to navigate between images
+6. Annotations are auto-saved as JSON and PNG masks in the original folder
+
+## Keyboard Shortcuts
+
+- **Arrow Left/Right**: Navigate between images
+- **D**: Toggle drawing mode
+- **Delete/Backspace**: Delete selected annotation
+- **Mouse Wheel**: Zoom in/out
+- **Click + Drag**: Pan image
+
+## Technology Stack
+
+- **Frontend**: React 19, TypeScript, Vite
+- **Backend**: Express.js, Node.js
+- **Styling**: Tailwind CSS
