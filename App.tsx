@@ -1,15 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
+import DirectoryBrowser from './components/DirectoryBrowser';
 import { TransformState } from './hooks/useImageTransform';
-
-// Fix for non-standard 'webkitdirectory' and 'directory' input attributes on input elements.
-declare module 'react' {
-  interface InputHTMLAttributes<T> {
-    webkitdirectory?: string;
-    directory?: string;
-  }
-}
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, ImageFile } from './utils/api';
 
 export interface AnnotationClass {
   id: number;
@@ -76,13 +70,16 @@ const Confetti: React.FC = () => {
 // --- End Confetti Component ---
 
 const App: React.FC = () => {
-  const [images, setImages] = useState<File[]>([]);
+  const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imagePaths, setImagePaths] = useState<string[]>([]);
+  const [currentDirectory, setCurrentDirectory] = useState<string>('');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
   const [allImageDimensions, setAllImageDimensions] = useState<Record<number, {width: number, height: number}>>({});
   const [activeTransform, setActiveTransform] = useState<TransformState>({ scale: 1, x: 0, y: 0 });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
   
   const [annotationClasses, setAnnotationClasses] = useState<AnnotationClass[]>([]);
   const [selectedAnnotationClass, setSelectedAnnotationClass] = useState<string | null>(null);
@@ -162,7 +159,7 @@ const App: React.FC = () => {
 
   // Effect to manage the annotation timer
   useEffect(() => {
-    if (images.length === 0) {
+    if (imageFiles.length === 0) {
       if (timerRef.current) clearInterval(timerRef.current);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       return;
@@ -196,7 +193,7 @@ const App: React.FC = () => {
       if (timerRef.current) clearInterval(timerRef.current);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     };
-  }, [currentIndex, images.length, resetInactivityTimer, allAnnotationTimes, allActiveAnnotationTimes, completedImages]);
+  }, [currentIndex, imageFiles.length, resetInactivityTimer, allAnnotationTimes, allActiveAnnotationTimes, completedImages]);
 
   // Effect to calculate annotation statistics
   useEffect(() => {
@@ -237,7 +234,7 @@ const App: React.FC = () => {
     Object.entries(allAnnotations).forEach(([indexStr, annotations]) => {
       const index = parseInt(indexStr, 10);
       if (allImageDimensions[index]) {
-        annotations.forEach(ann => {
+        (annotations as Annotation[]).forEach(ann => {
           const area = polygonArea(ann.points);
           newStats.allImages[ann.className] = (newStats.allImages[ann.className] || 0) + area;
         });
@@ -250,8 +247,10 @@ const App: React.FC = () => {
 
   const resetState = () => {
     imageUrls.forEach(url => URL.revokeObjectURL(url));
-    setImages([]);
+    setImageFiles([]);
     setImageUrls([]);
+    setImagePaths([]);
+    setCurrentDirectory('');
     setCurrentIndex(0);
     setIsDrawingMode(false);
     setAllAnnotations({});
@@ -286,124 +285,102 @@ const App: React.FC = () => {
     setShowConfetti(false);
   };
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-  
-    resetState();
-  
-    const allFiles = Array.from(files);
-    const imageFiles = allFiles
-      .filter(file => file.type.startsWith('image/') && !file.name.endsWith('_mask.png'))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const jsonFiles = allFiles.filter(file => file.name.endsWith('.json'));
-    const completedFile = allFiles.find(file => file.name === 'completed_images.txt');
-  
-    if (imageFiles.length === 0) {
-      if (event.target) event.target.value = '';
-      return;
-    }
-  
-    const newUrls = imageFiles.map(file => URL.createObjectURL(file));
-    setImages(imageFiles);
-    setImageUrls(newUrls);
+  const handleDirectorySelect = async (dirPath: string) => {
+    try {
+      resetState();
+      setShowDirectoryBrowser(false);
 
-    // Load completed status if file exists
-    if (completedFile) {
-      try {
-        const completedContent = await completedFile.text();
-        const completedNames = new Set(completedContent.split('\n').map(name => name.trim()).filter(Boolean));
-        const initialCompletedState: Record<number, boolean> = {};
-        imageFiles.forEach((file, index) => {
-          if (completedNames.has(file.name)) {
-            initialCompletedState[index] = true;
-          }
-        });
-        setCompletedImages(initialCompletedState);
-      } catch (e) {
-        console.error("Could not read completed images file:", e);
-      }
-    }
+      const filesData = await getFiles(dirPath);
+      setCurrentDirectory(dirPath);
+      setImageFiles(filesData.images);
 
-    // Load all image dimensions for stats
-    const dimsPromises = newUrls.map(url => new Promise<{width: number, height: number}>((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => resolve({ width: 0, height: 0 }); // Handle broken images
-      img.src = url;
-    }));
+      const urls = filesData.images.map(img => img.url);
+      const paths = filesData.images.map(img => img.path);
+      setImageUrls(urls);
+      setImagePaths(paths);
 
-    const dims = await Promise.all(dimsPromises);
-    const dimsRecord = dims.reduce((acc, dim, index) => {
-      acc[index] = dim;
-      return acc;
-    }, {} as Record<number, {width: number, height: number}>);
-    setAllImageDimensions(dimsRecord);
-  
-    if (jsonFiles.length > 0) {
-      const jsonContents = await Promise.all(jsonFiles.map(file => file.text()));
-      
-      const jsonAnnotationsMap = new Map<string, any[]>();
-      jsonContents.forEach((content, index) => {
-        try {
-          const data = JSON.parse(content);
-          const baseName = jsonFiles[index].name.split('.').slice(0, -1).join('.');
-          if (data.annotations && Array.isArray(data.annotations)) {
+      // Load all image dimensions for stats
+      const dimsPromises = urls.map(url => new Promise<{width: number, height: number}>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve({ width: 0, height: 0 });
+        img.src = url;
+      }));
+
+      const dims = await Promise.all(dimsPromises);
+      const dimsRecord = dims.reduce((acc, dim, index) => {
+        acc[index] = dim;
+        return acc;
+      }, {} as Record<number, {width: number, height: number}>);
+      setAllImageDimensions(dimsRecord);
+
+      // Load JSON annotations if available
+      if (filesData.jsonFiles.length > 0) {
+        const jsonDataPromises = filesData.jsonFiles.map(jsonFile =>
+          readJsonFile(jsonFile.path).catch(err => {
+            console.error(`Error loading ${jsonFile.name}:`, err);
+            return null;
+          })
+        );
+
+        const jsonContents = await Promise.all(jsonDataPromises);
+
+        const jsonAnnotationsMap = new Map<string, any[]>();
+        jsonContents.forEach((data, index) => {
+          if (data && data.annotations && Array.isArray(data.annotations)) {
+            const baseName = filesData.jsonFiles[index].name.split('.').slice(0, -1).join('.');
             jsonAnnotationsMap.set(baseName, data.annotations);
           }
-        } catch (e) {
-          console.error(`Error parsing JSON file ${jsonFiles[index].name}:`, e);
-        }
-      });
-      
-      const newAllAnnotations: Record<number, Annotation[]> = {};
-      const loadedClasses = new Map<string, { id: number }>();
-  
-      imageFiles.forEach((imageFile, index) => {
-        const imageBaseName = imageFile.name.split('.').slice(0, -1).join('.');
-        const annotationsData = jsonAnnotationsMap.get(imageBaseName);
-        
-        if (annotationsData) {
-          newAllAnnotations[index] = annotationsData.map((ann: any) => {
-            if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
-              loadedClasses.set(ann.className, { id: ann.classId });
-            }
-            return {
-              id: `${Date.now()}-${Math.random()}`,
-              points: ann.points,
-              className: ann.className,
-            };
-          });
-        }
-      });
-  
-      const finalClasses: AnnotationClass[] = [];
-      let colorIndex = 0;
-      for (const [name, data] of loadedClasses.entries()) {
-        finalClasses.push({
-          name,
-          id: data.id,
-          color: PALETTE[colorIndex % PALETTE.length]
         });
-        colorIndex++;
+
+        const newAllAnnotations: Record<number, Annotation[]> = {};
+        const loadedClasses = new Map<string, { id: number }>();
+
+        filesData.images.forEach((imageFile, index) => {
+          const imageBaseName = imageFile.name.split('.').slice(0, -1).join('.');
+          const annotationsData = jsonAnnotationsMap.get(imageBaseName);
+
+          if (annotationsData) {
+            newAllAnnotations[index] = annotationsData.map((ann: any) => {
+              if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
+                loadedClasses.set(ann.className, { id: ann.classId });
+              }
+              return {
+                id: `${Date.now()}-${Math.random()}`,
+                points: ann.points,
+                className: ann.className,
+              };
+            });
+          }
+        });
+
+        const finalClasses: AnnotationClass[] = [];
+        let colorIndex = 0;
+        for (const [name, data] of loadedClasses.entries()) {
+          finalClasses.push({
+            name,
+            id: data.id,
+            color: PALETTE[colorIndex % PALETTE.length]
+          });
+          colorIndex++;
+        }
+
+        finalClasses.sort((a, b) => a.id - b.id);
+
+        setAnnotationClasses(finalClasses);
+        setAllAnnotations(newAllAnnotations);
+
+        if (finalClasses.length > 0) {
+          setSelectedAnnotationClass(finalClasses[0].name);
+        }
       }
-      
-      finalClasses.sort((a, b) => a.id - b.id);
-      
-      setAnnotationClasses(finalClasses);
-      setAllAnnotations(newAllAnnotations);
-      
-      if (finalClasses.length > 0) {
-        setSelectedAnnotationClass(finalClasses[0].name);
-      }
-    }
-  
-    if (event.target) {
-      event.target.value = '';
+    } catch (error) {
+      console.error('Error loading directory:', error);
+      alert(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
-  const triggerFileSelect = useCallback(() => fileInputRef.current?.click(), []);
+  const triggerFileSelect = useCallback(() => setShowDirectoryBrowser(true), []);
   const clearImages = useCallback(() => resetState(), [imageUrls]);
 
   const changeImage = useCallback((newIndex: number) => {
@@ -417,36 +394,35 @@ const App: React.FC = () => {
     setHasUnsavedChanges(false);
   }, [currentIndex, completedImages]);
 
-  const handleExportJson = useCallback(() => {
+  const handleExportJson = useCallback(async () => {
     const currentAnns = allAnnotations[currentIndex] || [];
-    if (currentAnns.length === 0 || !images[currentIndex]) return;
+    if (currentAnns.length === 0 || !imageFiles[currentIndex]) return;
 
     const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
     const exportData = {
-      imageName: images[currentIndex].name,
+      imageName: imageFiles[currentIndex].name,
       annotations: currentAnns.map(ann => ({
         className: ann.className,
         classId: classIdMap.get(ann.className),
         points: ann.points,
       }))
     };
-    
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${images[currentIndex].name.split('.').slice(0, -1).join('.')}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [allAnnotations, currentIndex, images, annotationClasses]);
 
-  const handleExportMask = useCallback(() => {
+    const jsonPath = imagePaths[currentIndex].replace(/\.[^.]+$/, '.json');
+
+    try {
+      await saveJsonFile(jsonPath, exportData);
+      console.log('JSON saved successfully:', jsonPath);
+    } catch (error) {
+      console.error('Error saving JSON:', error);
+      alert('Failed to save JSON file');
+    }
+  }, [allAnnotations, currentIndex, imageFiles, imagePaths, annotationClasses]);
+
+  const handleExportMask = useCallback(async () => {
     const currentAnns = allAnnotations[currentIndex] || [];
     if (currentAnns.length === 0 || !imageDimensions) return;
-    
+
     const canvas = document.createElement('canvas');
     canvas.width = imageDimensions.width;
     canvas.height = imageDimensions.height;
@@ -461,7 +437,7 @@ const App: React.FC = () => {
     currentAnns.forEach(ann => {
       const classId = classIdMap.get(ann.className);
       if (classId === undefined || ann.points.length < 3) return;
-      
+
       ctx.fillStyle = `rgb(${classId}, ${classId}, ${classId})`;
       ctx.beginPath();
       ctx.moveTo(ann.points[0].x, ann.points[0].y);
@@ -472,22 +448,20 @@ const App: React.FC = () => {
       ctx.fill();
     });
 
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${images[currentIndex].name.split('.').slice(0, -1).join('.')}_mask.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 'image/png');
+    const base64Data = canvas.toDataURL('image/png');
+    const maskPath = imagePaths[currentIndex].replace(/\.[^.]+$/, '_mask.png');
 
-  }, [allAnnotations, currentIndex, imageDimensions, annotationClasses, images]);
+    try {
+      await saveImageFile(maskPath, base64Data);
+      console.log('Mask saved successfully:', maskPath);
+    } catch (error) {
+      console.error('Error saving mask:', error);
+      alert('Failed to save mask file');
+    }
+  }, [allAnnotations, currentIndex, imageDimensions, annotationClasses, imagePaths]);
 
   const handleExportTimes = useCallback(() => {
-    if (images.length === 0) return;
+    if (imageFiles.length === 0) return;
     const timesToExport = { ...allAnnotationTimes };
     if (!completedImages[currentIndex]) {
         timesToExport[currentIndex] = annotationTimeRef.current;
@@ -505,7 +479,7 @@ const App: React.FC = () => {
     };
   
     let content = "Annotation Times:\n\n";
-    images.forEach((image, index) => {
+    imageFiles.forEach((image, index) => {
       const totalTime = timesToExport[index] || 0;
       const activeTime = activeTimesToExport[index] || 0;
       content += `${image.name}:\n`;
@@ -522,12 +496,12 @@ const App: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [allAnnotationTimes, allActiveAnnotationTimes, currentIndex, images, completedImages]);
+  }, [allAnnotationTimes, allActiveAnnotationTimes, currentIndex, imageFiles, completedImages]);
 
   const handleExportCompleted = useCallback(() => {
-    if (images.length === 0) return;
+    if (imageFiles.length === 0) return;
 
-    const completedFileNames = images
+    const completedFileNames = imageFiles
       .map((image, index) => ({ name: image.name, index }))
       .filter(item => completedImages[item.index])
       .map(item => item.name);
@@ -547,35 +521,35 @@ const App: React.FC = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [images, completedImages]);
+  }, [imageFiles, completedImages]);
 
   const goToPrevious = useCallback(() => {
     if (hasUnsavedChanges) {
       handleExportJson();
       handleExportMask();
     }
-    changeImage(currentIndex === 0 ? images.length - 1 : currentIndex - 1);
-  }, [images.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
+    changeImage(currentIndex === 0 ? imageFiles.length - 1 : currentIndex - 1);
+  }, [imageFiles.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
 
   const goToNext = useCallback(() => {
     if (hasUnsavedChanges) {
       handleExportJson();
       handleExportMask();
     }
-    changeImage(currentIndex === images.length - 1 ? 0 : currentIndex + 1);
-  }, [images.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
+    changeImage(currentIndex === imageFiles.length - 1 ? 0 : currentIndex + 1);
+  }, [imageFiles.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
 
   const goToIndex = useCallback((index: number) => {
-    if (index >= 0 && index < images.length) {
+    if (index >= 0 && index < imageFiles.length) {
       if (hasUnsavedChanges) {
         handleExportJson();
         handleExportMask();
       }
       changeImage(index);
     } else {
-      alert(`Please enter a number between 1 and ${images.length}.`);
+      alert(`Please enter a number between 1 and ${imageFiles.length}.`);
     }
-  }, [images.length, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
+  }, [imageFiles.length, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
 
   const handleAddAnnotation = useCallback((newAnnotation: Omit<Annotation, 'id'>) => {
     if (!selectedAnnotationClass || completedImages[currentIndex]) return;
@@ -677,7 +651,7 @@ const App: React.FC = () => {
       }
 
       // Image navigation
-      if (images.length > 1) {
+      if (imageFiles.length > 1) {
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
           goToPrevious();
@@ -700,7 +674,7 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
-    images.length, 
+    imageFiles.length, 
     goToPrevious, 
     goToNext, 
     selectedAnnotationId, 
@@ -739,17 +713,22 @@ const App: React.FC = () => {
 
   const currentAnnotations = allAnnotations[currentIndex] || [];
   const completedImagesCount = Object.values(completedImages).filter(isCompleted => isCompleted).length;
-  const totalImages = images.length;
+  const totalImages = imageFiles.length;
   const isCurrentImageCompleted = !!completedImages[currentIndex];
 
   return (
     <div className="w-screen h-screen bg-gray-900 flex flex-row overflow-hidden font-sans">
       {showConfetti && <Confetti />}
-      <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.json,.txt" className="hidden" webkitdirectory="" directory="" multiple/>
-      
+      {showDirectoryBrowser && (
+        <DirectoryBrowser
+          onSelectDirectory={handleDirectorySelect}
+          onClose={() => setShowDirectoryBrowser(false)}
+        />
+      )}
+
       {imageUrls.length > 0 && (
         <Toolbar
-          images={images}
+          images={imageFiles}
           currentIndex={currentIndex}
           transform={activeTransform}
           isDrawingMode={isDrawingMode}

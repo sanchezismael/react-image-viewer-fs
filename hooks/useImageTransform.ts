@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, RefObject } from 'react';
+import React, { useState, useRef, useEffect, useCallback, RefObject } from 'react';
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 15;
@@ -40,17 +40,27 @@ export const useImageTransform = (
     const calculateInitialTransform = useCallback(() => {
         const viewerElement = viewerRef.current;
         if (!viewerElement || !imageDimensions) return;
-        
+
         const rect = viewerElement.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
 
         const { width: naturalWidth, height: naturalHeight } = imageDimensions;
         if (naturalWidth === 0 || naturalHeight === 0) return;
 
-        // Since the viewer has the same aspect ratio as the image, we can just use the width ratio for scale.
-        const initialScale = rect.width / naturalWidth;
-        
-        const initialState = { scale: initialScale, x: 0, y: 0 };
+        // Calculate scale to fit and center the image in the viewer
+        const scaleX = rect.width / naturalWidth;
+        const scaleY = rect.height / naturalHeight;
+        const initialScale = Math.min(scaleX, scaleY);
+
+        // Calculate scaled dimensions
+        const scaledWidth = naturalWidth * initialScale;
+        const scaledHeight = naturalHeight * initialScale;
+
+        // Center the image in the viewer
+        const offsetX = (rect.width - scaledWidth) / 2;
+        const offsetY = (rect.height - scaledHeight) / 2;
+
+        const initialState = { scale: initialScale, x: offsetX, y: offsetY };
         setTransform(initialState);
         initialTransformRef.current = initialState;
         setIsPositioned(true);

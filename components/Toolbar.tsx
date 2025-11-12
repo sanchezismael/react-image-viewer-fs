@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { TransformState } from '../hooks/useImageTransform';
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, MinusIcon, PencilIcon, PlusIcon, ResetIcon, TrashIcon } from './icons';
 import { Annotation, AnnotationClass, AnnotationStats } from '../App';
+import { ImageFile } from '../utils/api';
 import DonutChart from './DonutChart';
 
 interface ToolbarProps {
-  images: File[];
+  images: ImageFile[];
   currentIndex: number;
   transform: TransformState;
   isDrawingMode: boolean;
@@ -60,7 +61,7 @@ const StatsSection: React.FC<{
 }> = ({ title, stats, totalArea, classes }) => {
   if (totalArea === 0) return null;
 
-  const totalAnnotatedArea = Object.values(stats).reduce((sum, area) => sum + area, 0);
+  const totalAnnotatedArea = Object.values(stats).reduce((sum, area) => (sum as number) + (area as number), 0) as number;
   const backgroundArea = totalArea - totalAnnotatedArea;
 
   const data = [
@@ -141,7 +142,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
   const hasAnnotations = annotations.length > 0;
 
-  const totalPixelArea = Object.values(allImageDimensions).reduce((sum, dim) => sum + (dim.width * dim.height), 0);
+  const totalPixelArea = Object.values(allImageDimensions).reduce((sum, dim) => (sum as number) + ((dim as {width: number, height: number}).width * (dim as {width: number, height: number}).height), 0);
   const currentImagePixelArea = currentImageDimensions ? currentImageDimensions.width * currentImageDimensions.height : 0;
 
   return (
