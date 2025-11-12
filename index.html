@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>React Image Viewer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        overscroll-behavior: none;
+      }
+      .thumbnail-scrollbar::-webkit-scrollbar {
+        width: 8px;
+      }
+      .thumbnail-scrollbar::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .thumbnail-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #4a5568;
+        border-radius: 4px;
+      }
+      .thumbnail-scrollbar::-webkit-scrollbar-thumb:hover {
+        background-color: #718096;
+      }
+      @keyframes confetti-fall {
+        0% {
+          opacity: 1;
+          transform: translateY(-20px) rotateZ(0deg) rotateY(0deg);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(105vh) rotateZ(720deg) rotateY(360deg);
+        }
+      }
+      .confetti {
+        position: absolute;
+        top: 0;
+        animation: confetti-fall 4s ease-in forwards;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gray-900 text-white font-sans">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
