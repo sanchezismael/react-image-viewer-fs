@@ -25,9 +25,14 @@ Simply double-click on:
 - **`start-app.bat`** (Windows Batch)
 - **`start-app.ps1`** (PowerShell - right-click → Run with PowerShell)
 
+Ambos scripts:
+- Aseguran que `node` esté disponible (añaden `C:\Program Files\nodejs` al PATH si hace falta).
+- Ejecutan `npm install` automáticamente la primera vez.
+- Lanzan `npm run dev` directamente en Windows (sin WSL).
+
 ### Option 2: Manual Start
 
-**Prerequisites:** Node.js and WSL (Windows Subsystem for Linux)
+**Prerequisites en Windows:** Tener Node.js 18 LTS o superior instalado (MSI oficial o `winget install OpenJS.NodeJS.LTS`).
 
 1. Install dependencies:
    ```bash
