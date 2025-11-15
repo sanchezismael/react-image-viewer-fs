@@ -81,6 +81,7 @@ Ambos scripts:
 - Navigating to another image (buttons, thumbnail jump, or arrow keys) triggers the same save process automatically before the image changes.
 - The timer log keeps both total and active annotation time per image, so you always have an up-to-date history without manual exports.
 - Si necesitas rutas personalizadas (por ejemplo, otro disco), abre la sección **Output Folders → Avanzado** en la barra lateral, ajusta las rutas y, si quieres volver a la estructura estándar, usa "Restaurar rutas por defecto".
+- Las rutas personalizadas se guardan en `.viewer-config.json` dentro de la carpeta raíz de imágenes, por lo que la configuración se recuerda automáticamente al volver a abrirla.
 
 ## Keyboard Shortcuts
 

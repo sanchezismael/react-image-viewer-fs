@@ -25,6 +25,8 @@ type OutputPaths = {
   times: string;
 };
 
+const CONFIG_FILE_NAME = '.viewer-config.json';
+
 const PALETTE = [
   'rgba(239, 68, 68, 0.5)',   // red
   'rgba(59, 130, 246, 0.5)',  // blue
@@ -291,8 +293,8 @@ const App: React.FC = () => {
     setImageDimensions(null);
     setAllImageDimensions({});
     setAnnotationStats(null);
-  setOutputPaths(null);
-  setShowOutputSettings(false);
+    setOutputPaths(null);
+    setShowOutputSettings(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -322,10 +324,12 @@ const App: React.FC = () => {
       resetState();
       setShowDirectoryBrowser(false);
 
-      const filesData = await getFiles(dirPath);
-      setCurrentDirectory(dirPath);
-      setImageFiles(filesData.images);
-  setOutputPaths(getDefaultOutputPaths(dirPath));
+  const filesData = await getFiles(dirPath);
+  setCurrentDirectory(dirPath);
+  setImageFiles(filesData.images);
+  const defaultOutputs = getDefaultOutputPaths(dirPath);
+  setOutputPaths(defaultOutputs);
+  const persistedPathsPromise = loadPersistedOutputPaths(dirPath);
 
       const urls = filesData.images.map(img => img.url);
       const paths = filesData.images.map(img => img.path);
@@ -406,6 +410,11 @@ const App: React.FC = () => {
         if (finalClasses.length > 0) {
           setSelectedAnnotationClass(finalClasses[0].name);
         }
+      }
+
+      const persistedPaths = await persistedPathsPromise;
+      if (persistedPaths) {
+        setOutputPaths(persistedPaths);
       }
     } catch (error) {
       console.error('Error loading directory:', error);
@@ -627,6 +636,36 @@ const App: React.FC = () => {
     );
   }, []);
 
+  const loadPersistedOutputPaths = useCallback(async (dirPath: string): Promise<OutputPaths | null> => {
+    if (!dirPath) return null;
+    const configPath = joinPathSegments(dirPath, CONFIG_FILE_NAME);
+    try {
+      const data = await readJsonFile(configPath);
+      if (data && data.outputPaths) {
+        const defaults = getDefaultOutputPaths(dirPath);
+        return {
+          annotations: typeof data.outputPaths.annotations === 'string' ? data.outputPaths.annotations : defaults.annotations,
+          masks: typeof data.outputPaths.masks === 'string' ? data.outputPaths.masks : defaults.masks,
+          times: typeof data.outputPaths.times === 'string' ? data.outputPaths.times : defaults.times,
+        };
+      }
+    } catch (error) {
+      // Silently ignore if config file doesn't exist or can't be read
+      console.debug('Output config not found or unreadable:', error);
+    }
+    return null;
+  }, []);
+
+  const persistOutputPaths = useCallback(async (paths: OutputPaths) => {
+    if (!currentDirectory) return;
+    const configPath = joinPathSegments(currentDirectory, CONFIG_FILE_NAME);
+    try {
+      await saveJsonFile(configPath, { outputPaths: paths });
+    } catch (error) {
+      console.error('Error persisting output configuration:', error);
+    }
+  }, [currentDirectory]);
+
   const handleToggleOutputSettings = useCallback(() => {
     setShowOutputSettings(prev => !prev);
   }, []);
@@ -641,14 +680,19 @@ const App: React.FC = () => {
     const currentValue = outputPaths[type];
     const newValue = window.prompt(`Nueva ruta para ${labels[type]}:`, currentValue);
     if (newValue && newValue.trim()) {
-      setOutputPaths(prev => (prev ? { ...prev, [type]: newValue.trim() } : prev));
+      const sanitized = newValue.trim();
+      const updated = { ...outputPaths, [type]: sanitized };
+      setOutputPaths(updated);
+      void persistOutputPaths(updated);
     }
-  }, [outputPaths]);
+  }, [outputPaths, persistOutputPaths]);
 
   const handleRestoreDefaultOutputPaths = useCallback(() => {
     if (!currentDirectory) return;
-    setOutputPaths(getDefaultOutputPaths(currentDirectory));
-  }, [currentDirectory]);
+    const defaults = getDefaultOutputPaths(currentDirectory);
+    setOutputPaths(defaults);
+    void persistOutputPaths(defaults);
+  }, [currentDirectory, persistOutputPaths]);
 
   const handleMarkAsComplete = useCallback(() => {
     if (completedImages[currentIndex]) return;
