@@ -37,11 +37,9 @@ interface ToolbarProps {
   onSelectAnnotationClass: (className: string) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
-  onExportJson: () => void;
-  onExportMask: () => void;
-  onExportTimes: () => void;
-  onExportCompleted: () => void;
+  onSaveAll: () => void | Promise<void>;
   onMarkAsComplete: () => void;
+  isSaving: boolean;
 }
 
 const rgbaToHex = (rgba: string): string => {
@@ -101,7 +99,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
   onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
-  onExportJson, onExportMask, onExportTimes, onExportCompleted, onMarkAsComplete
+  onSaveAll, onMarkAsComplete, isSaving
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
   const [newClassName, setNewClassName] = useState('');
@@ -140,8 +138,6 @@ const Toolbar: React.FC<ToolbarProps> = ({
     setJumpToValue(''); // Reset input
   };
 
-  const hasAnnotations = annotations.length > 0;
-
   const totalPixelArea = Object.values(allImageDimensions).reduce((sum, dim) => (sum as number) + ((dim as {width: number, height: number}).width * (dim as {width: number, height: number}).height), 0);
   const currentImagePixelArea = currentImageDimensions ? currentImageDimensions.width * currentImageDimensions.height : 0;
 
@@ -156,17 +152,12 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500">
             Close
           </button>
-          <button onClick={onExportJson} disabled={!hasAnnotations} className="px-4 py-2 text-sm font-semibold bg-sky-600 text-white rounded-md hover:bg-sky-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-sky-500">
-            Export JSON
-          </button>
-          <button onClick={onExportMask} disabled={!hasAnnotations} className="px-4 py-2 text-sm font-semibold bg-teal-600 text-white rounded-md hover:bg-teal-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-teal-500">
-            Export Mask
-          </button>
-          <button onClick={onExportTimes} className="col-span-2 px-4 py-2 text-sm font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500">
-            Export Times (TXT)
-          </button>
-           <button onClick={onExportCompleted} className="col-span-2 px-4 py-2 text-sm font-semibold bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-yellow-500">
-            Export Completed (TXT)
+          <button
+            onClick={onSaveAll}
+            disabled={isSaving}
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-sky-600 text-white rounded-md hover:bg-sky-700 disabled:bg-gray-600 disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-sky-500"
+          >
+            {isSaving ? 'Saving…' : 'Guardar cambios'}
           </button>
           <button 
             onClick={onMarkAsComplete} 

@@ -160,3 +160,26 @@ export async function saveImageFile(filePath: string, base64Data: string): Promi
     throw error;
   }
 }
+
+/**
+ * Guardar un archivo de texto plano
+ */
+export async function saveTextFile(filePath: string, content: string): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/save-text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ path: filePath, content }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Failed to save text file: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error('Error saving text file:', error);
+    throw error;
+  }
+}

@@ -15,20 +15,28 @@ setlocal enabledelayedexpansion
 REM Ensure Node.js exists in PATH (try default install locations)
 where node >nul 2>&1
 if errorlevel 1 (
-	for %%P in ("C:\\Program Files\\nodejs", "C:\\Program Files (x86)\\nodejs") do (
-		if exist %%~P\node.exe (
-			set "PATH=%%~P;!PATH!"
-			goto FOUND_NODE
-		)
-	)
-	echo [ERROR] Node.js no se encuentra en el PATH. Instala Node 18+ o agrega su carpeta a la variable PATH.
-	endlocal
-	pause
-	exit /b 1
+       for %%P in ("C:\Program Files\nodejs", "C:\Program Files (x86)\nodejs", "%LOCALAPPDATA%\Programs\nodejs") do (
+               if exist %%~P\node.exe (
+                       set "PATH=%%~P;!PATH!"
+                       goto FOUND_NODE
+               )
+       )
+       echo [ERROR] Node.js no se encuentra en el PATH.
+       echo.
+       echo Opciones para solucionar:
+       echo   1. Instala Node.js LTS:
+       echo      winget install OpenJS.NodeJS.LTS
+       echo.
+       echo   2. O ejecuta como ADMINISTRADOR:
+       echo      setup-node-path.ps1
+       echo.
+       echo   3. Luego cierra TODAS las terminales y abre una nueva
+       echo.
+       endlocal
+       pause
+       exit /b 1
 )
-:FOUND_NODE
-
-where node >nul 2>&1
+:FOUND_NODEwhere node >nul 2>&1
 if errorlevel 1 (
 	echo [ERROR] Node.js sigue sin estar disponible. Reabre la terminal o instala Node 18+.
 	endlocal

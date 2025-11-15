@@ -12,12 +12,25 @@ Image annotation tool with polygon drawing, timer tracking, and local file syste
 - ⏱️ **Time Tracking**: Automatic timer for annotation time (total and active time)
 - ✏️ **Polygon Annotations**: Draw and edit polygon annotations on images
 - 🎨 **Custom Classes**: Define multiple annotation classes with custom colors
-- 💾 **Auto-save**: Automatically saves JSON annotations and PNG masks to source directory
+- 💾 **Auto-save**: Single "Guardar cambios" button saves JSON, PNG mask, and `annotation_times.txt`, and switching images also auto-saves
 - 📊 **Statistics**: Real-time pixel statistics and completion progress
 - 🎊 **Completion Tracking**: Mark images as complete with confetti animation
 - 🔍 **Zoom & Pan**: Full image navigation with mouse and keyboard
 
 ## Quick Start
+
+### ⚠️ Prerequisito: Node.js debe estar disponible
+
+Si al ejecutar `npm` o `node` en una nueva terminal obtienes errores, sigue la **[Guía de Configuración Completa (SETUP.md)](./SETUP.md)**.
+
+**Solución rápida** (ejecutar como ADMINISTRADOR):
+```powershell
+.\setup-node-path.ps1
+```
+
+Luego cierra **TODAS** las terminales y abre una nueva. Node/npm funcionarán automáticamente.
+
+---
 
 ### Option 1: Double-click Launcher (Easiest)
 
@@ -55,7 +68,13 @@ Ambos scripts:
 3. Click **"Select"** to load all images from that folder
 4. Add annotation classes and start drawing polygons
 5. Use arrow keys to navigate between images
-6. Annotations are auto-saved as JSON and PNG masks in the original folder
+6. Use **"Guardar cambios"** to persist JSON, mask, and times (also auto-saves before switching images)
+
+### Saving & auto-save
+
+- The new **"Guardar cambios"** button writes the current image annotations (`.json`), the mask (`_mask.png`), and the global timer log (`annotation_times.txt`) directly inside the open folder.
+- Navigating to another image (buttons, thumbnail jump, or arrow keys) triggers the same save process automatically before the image changes.
+- The timer log keeps both total and active annotation time per image, so you always have an up-to-date history without manual exports.
 
 ## Keyboard Shortcuts
 

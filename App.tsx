@@ -3,7 +3,7 @@ import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import { TransformState } from './hooks/useImageTransform';
-import { getFiles, readJsonFile, saveJsonFile, saveImageFile, ImageFile } from './utils/api';
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, ImageFile } from './utils/api';
 
 export interface AnnotationClass {
   id: number;
@@ -86,7 +86,7 @@ const App: React.FC = () => {
 
   const [allAnnotations, setAllAnnotations] = useState<Record<number, Annotation[]>>({});
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [annotationStats, setAnnotationStats] = useState<AnnotationStats | null>(null);
   
   const [annotationTime, setAnnotationTime] = useState(0);
@@ -106,8 +106,8 @@ const App: React.FC = () => {
   const [completedImages, setCompletedImages] = useState<Record<number, boolean>>({});
   const [showConfetti, setShowConfetti] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const imageViewerRef = useRef<ImageViewerApi>(null);
+  const saveInProgressRef = useRef<Promise<boolean> | null>(null);
   
   useEffect(() => {
     annotationTimeRef.current = annotationTime;
@@ -259,7 +259,6 @@ const App: React.FC = () => {
     setSelectedAnnotationClass(null);
     setImageDimensions(null);
     setAllImageDimensions({});
-    setHasUnsavedChanges(false);
     setAnnotationStats(null);
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -391,165 +390,152 @@ const App: React.FC = () => {
     setCurrentIndex(newIndex);
     setSelectedAnnotationId(null);
     setImageDimensions(null); // Reset dimensions to trigger loading for the new image
-    setHasUnsavedChanges(false);
   }, [currentIndex, completedImages]);
 
-  const handleExportJson = useCallback(async () => {
-    const currentAnns = allAnnotations[currentIndex] || [];
-    if (currentAnns.length === 0 || !imageFiles[currentIndex]) return;
+  const buildDirectoryFilePath = useCallback((fileName: string) => {
+    if (!currentDirectory) return '';
+    const trimmed = currentDirectory.replace(/[\\/]+$/, '');
+    const separator = trimmed.includes('\\') ? '\\' : '/';
+    return `${trimmed}${separator}${fileName}`;
+  }, [currentDirectory]);
 
-    const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
-    const exportData = {
-      imageName: imageFiles[currentIndex].name,
-      annotations: currentAnns.map(ann => ({
-        className: ann.className,
-        classId: classIdMap.get(ann.className),
-        points: ann.points,
-      }))
-    };
+  const formatTimeForFile = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes} minute(s) ${seconds} second(s)`;
+  };
 
-    const jsonPath = imagePaths[currentIndex].replace(/\.[^.]+$/, '.json');
-
-    try {
-      await saveJsonFile(jsonPath, exportData);
-      console.log('JSON saved successfully:', jsonPath);
-    } catch (error) {
-      console.error('Error saving JSON:', error);
-      alert('Failed to save JSON file');
-    }
-  }, [allAnnotations, currentIndex, imageFiles, imagePaths, annotationClasses]);
-
-  const handleExportMask = useCallback(async () => {
-    const currentAnns = allAnnotations[currentIndex] || [];
-    if (currentAnns.length === 0 || !imageDimensions) return;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = imageDimensions.width;
-    canvas.height = imageDimensions.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = 'rgb(0, 0, 0)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
-
-    currentAnns.forEach(ann => {
-      const classId = classIdMap.get(ann.className);
-      if (classId === undefined || ann.points.length < 3) return;
-
-      ctx.fillStyle = `rgb(${classId}, ${classId}, ${classId})`;
-      ctx.beginPath();
-      ctx.moveTo(ann.points[0].x, ann.points[0].y);
-      for (let i = 1; i < ann.points.length; i++) {
-        ctx.lineTo(ann.points[i].x, ann.points[i].y);
-      }
-      ctx.closePath();
-      ctx.fill();
-    });
-
-    const base64Data = canvas.toDataURL('image/png');
-    const maskPath = imagePaths[currentIndex].replace(/\.[^.]+$/, '_mask.png');
-
-    try {
-      await saveImageFile(maskPath, base64Data);
-      console.log('Mask saved successfully:', maskPath);
-    } catch (error) {
-      console.error('Error saving mask:', error);
-      alert('Failed to save mask file');
-    }
-  }, [allAnnotations, currentIndex, imageDimensions, annotationClasses, imagePaths]);
-
-  const handleExportTimes = useCallback(() => {
-    if (imageFiles.length === 0) return;
-    const timesToExport = { ...allAnnotationTimes };
-    if (!completedImages[currentIndex]) {
-        timesToExport[currentIndex] = annotationTimeRef.current;
-    }
-    
-    const activeTimesToExport = { ...allActiveAnnotationTimes };
-    if (!completedImages[currentIndex]) {
-        activeTimesToExport[currentIndex] = activeAnnotationTimeRef.current;
-    }
-
-    const format = (totalSeconds: number) => {
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        return `${minutes} minute(s) ${seconds} second(s)`;
-    };
-  
-    let content = "Annotation Times:\n\n";
+  const createTimesFileContent = useCallback((timesSnapshot: Record<number, number>, activeSnapshot: Record<number, number>) => {
+    let content = 'Annotation Times:\n\n';
     imageFiles.forEach((image, index) => {
-      const totalTime = timesToExport[index] || 0;
-      const activeTime = activeTimesToExport[index] || 0;
+      const totalTime = timesSnapshot[index] || 0;
+      const activeTime = activeSnapshot[index] || 0;
       content += `${image.name}:\n`;
-      content += `  - Total Time: ${format(totalTime)}\n`;
-      content += `  - Active Annotation Time: ${format(activeTime)}\n\n`;
+      content += `  - Total Time: ${formatTimeForFile(totalTime)}\n`;
+      content += `  - Active Annotation Time: ${formatTimeForFile(activeTime)}\n\n`;
     });
-  
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'annotation_times.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [allAnnotationTimes, allActiveAnnotationTimes, currentIndex, imageFiles, completedImages]);
+    return content;
+  }, [imageFiles]);
 
-  const handleExportCompleted = useCallback(() => {
-    if (imageFiles.length === 0) return;
-
-    const completedFileNames = imageFiles
-      .map((image, index) => ({ name: image.name, index }))
-      .filter(item => completedImages[item.index])
-      .map(item => item.name);
-
-    if (completedFileNames.length === 0) {
-      alert("No images have been marked as complete.");
-      return;
+  const handleSaveAll = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!imageFiles[currentIndex]) {
+      return false;
     }
 
-    const content = completedFileNames.join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'completed_images.txt';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [imageFiles, completedImages]);
-
-  const goToPrevious = useCallback(() => {
-    if (hasUnsavedChanges) {
-      handleExportJson();
-      handleExportMask();
+    if (saveInProgressRef.current) {
+      return saveInProgressRef.current;
     }
-    changeImage(currentIndex === 0 ? imageFiles.length - 1 : currentIndex - 1);
-  }, [imageFiles.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
 
-  const goToNext = useCallback(() => {
-    if (hasUnsavedChanges) {
-      handleExportJson();
-      handleExportMask();
-    }
-    changeImage(currentIndex === imageFiles.length - 1 ? 0 : currentIndex + 1);
-  }, [imageFiles.length, currentIndex, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
+    const savePromise = (async () => {
+      setIsSaving(true);
+      try {
+        const currentAnns = allAnnotations[currentIndex] || [];
+        const jsonPath = imagePaths[currentIndex]?.replace(/\.[^.]+$/, '.json');
+        const maskPath = imagePaths[currentIndex]?.replace(/\.[^.]+$/, '_mask.png');
 
-  const goToIndex = useCallback((index: number) => {
-    if (index >= 0 && index < imageFiles.length) {
-      if (hasUnsavedChanges) {
-        handleExportJson();
-        handleExportMask();
+        const timesSnapshot = { ...allAnnotationTimes };
+        const activeSnapshot = { ...allActiveAnnotationTimes };
+
+        if (!completedImages[currentIndex]) {
+          timesSnapshot[currentIndex] = annotationTimeRef.current;
+          activeSnapshot[currentIndex] = activeAnnotationTimeRef.current;
+        }
+
+        setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: timesSnapshot[currentIndex] || 0 }));
+        setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeSnapshot[currentIndex] || 0 }));
+
+        const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
+        const operations: Promise<void>[] = [];
+
+        if (jsonPath) {
+          const exportData = {
+            imageName: imageFiles[currentIndex].name,
+            annotations: currentAnns.map(ann => ({
+              className: ann.className,
+              classId: classIdMap.get(ann.className),
+              points: ann.points,
+            }))
+          };
+          operations.push(saveJsonFile(jsonPath, exportData));
+        }
+
+        if (maskPath) {
+          const dims = imageDimensions || allImageDimensions[currentIndex];
+          if (dims) {
+            const canvas = document.createElement('canvas');
+            canvas.width = dims.width;
+            canvas.height = dims.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.fillStyle = 'rgb(0, 0, 0)';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+              currentAnns.forEach(ann => {
+                const classId = classIdMap.get(ann.className);
+                if (classId === undefined || ann.points.length < 3) return;
+
+                ctx.fillStyle = `rgb(${classId}, ${classId}, ${classId})`;
+                ctx.beginPath();
+                ctx.moveTo(ann.points[0].x, ann.points[0].y);
+                for (let i = 1; i < ann.points.length; i++) {
+                  ctx.lineTo(ann.points[i].x, ann.points[i].y);
+                }
+                ctx.closePath();
+                ctx.fill();
+              });
+
+              const base64Data = canvas.toDataURL('image/png');
+              operations.push(saveImageFile(maskPath, base64Data));
+            }
+          }
+        }
+
+        const timesFilePath = buildDirectoryFilePath('annotation_times.txt');
+        if (timesFilePath) {
+          const content = createTimesFileContent(timesSnapshot, activeSnapshot);
+          operations.push(saveTextFile(timesFilePath, content));
+        }
+
+        await Promise.all(operations);
+        return true;
+      } catch (error) {
+        console.error('Error saving changes:', error);
+        if (!silent) {
+          alert('Failed to save changes. Please try again.');
+        }
+        return false;
+      } finally {
+        setIsSaving(false);
       }
+    })();
+
+    saveInProgressRef.current = savePromise;
+    const result = await savePromise;
+    saveInProgressRef.current = null;
+    return result;
+  }, [imageFiles, currentIndex, allAnnotations, imagePaths, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, buildDirectoryFilePath, createTimesFileContent]);
+
+  const goToPrevious = useCallback(async () => {
+    const saved = await handleSaveAll();
+    if (!saved) return;
+    changeImage(currentIndex === 0 ? imageFiles.length - 1 : currentIndex - 1);
+  }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
+
+  const goToNext = useCallback(async () => {
+    const saved = await handleSaveAll();
+    if (!saved) return;
+    changeImage(currentIndex === imageFiles.length - 1 ? 0 : currentIndex + 1);
+  }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
+
+  const goToIndex = useCallback(async (index: number) => {
+    if (index >= 0 && index < imageFiles.length) {
+      const saved = await handleSaveAll();
+      if (!saved) return;
       changeImage(index);
     } else {
       alert(`Please enter a number between 1 and ${imageFiles.length}.`);
     }
-  }, [imageFiles.length, changeImage, hasUnsavedChanges, handleExportJson, handleExportMask]);
+  }, [imageFiles.length, changeImage, handleSaveAll]);
 
   const handleAddAnnotation = useCallback((newAnnotation: Omit<Annotation, 'id'>) => {
     if (!selectedAnnotationClass || completedImages[currentIndex]) return;
@@ -559,7 +545,6 @@ const App: React.FC = () => {
         const currentAnns = prev[currentIndex] || [];
         return { ...prev, [currentIndex]: [...currentAnns, annotationWithId] };
     });
-    setHasUnsavedChanges(true);
   }, [currentIndex, selectedAnnotationClass, completedImages]);
 
   const handleSelectAnnotation = useCallback((id: string | null) => setSelectedAnnotationId(id), []);
@@ -573,7 +558,6 @@ const App: React.FC = () => {
     if (selectedAnnotationId === id) {
         setSelectedAnnotationId(null);
     }
-    setHasUnsavedChanges(true);
   }, [currentIndex, selectedAnnotationId, completedImages]);
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
@@ -759,11 +743,9 @@ const App: React.FC = () => {
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}
           onDeleteAnnotation={handleDeleteAnnotation}
-          onExportJson={handleExportJson}
-          onExportMask={handleExportMask}
-          onExportTimes={handleExportTimes}
-          onExportCompleted={handleExportCompleted}
+          onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
+          isSaving={isSaving}
         />
       )}
       

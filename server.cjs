@@ -240,6 +240,28 @@ app.post('/api/save-image', (req, res) => {
 });
 
 /**
+ * Endpoint para guardar un archivo de texto plano
+ * POST /api/save-text
+ * Body: { path: string, content: string }
+ */
+app.post('/api/save-text', (req, res) => {
+  try {
+    const { path: filePath, content } = req.body;
+
+    if (!filePath || typeof content !== 'string') {
+      return res.status(400).json({ error: 'Path and content are required' });
+    }
+
+    fs.writeFileSync(filePath, content, 'utf-8');
+
+    res.json({ success: true, message: 'Text file saved successfully' });
+  } catch (error) {
+    console.error('Error saving text file:', error);
+    res.status(500).json({ error: 'Failed to save text file', message: error.message });
+  }
+});
+
+/**
  * Endpoint para obtener drives/discos disponibles (Windows)
  */
 app.get('/api/drives', (req, res) => {
