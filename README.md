@@ -13,7 +13,8 @@ Image annotation tool with polygon drawing, timer tracking, and local file syste
 - ✏️ **Polygon Annotations**: Draw and edit polygon annotations on images
 - 🎨 **Custom Classes**: Define multiple annotation classes with custom colors
 - 💾 **Auto-save**: Single "Guardar cambios" button saves JSON, PNG mask, and `annotation_times.txt`, and switching images also auto-saves
-- 📊 **Statistics**: Real-time pixel statistics and completion progress
+- �️ **Output folders**: JSON, masks, and time logs are organized in dedicated subdirectories (annotations/masks/times)
+- �📊 **Statistics**: Real-time pixel statistics and completion progress
 - 🎊 **Completion Tracking**: Mark images as complete with confetti animation
 - 🔍 **Zoom & Pan**: Full image navigation with mouse and keyboard
 
@@ -73,8 +74,13 @@ Ambos scripts:
 ### Saving & auto-save
 
 - The new **"Guardar cambios"** button writes the current image annotations (`.json`), the mask (`_mask.png`), and the global timer log (`annotation_times.txt`) directly inside the open folder.
+- Los archivos se organizan automáticamente en:
+   - `<carpeta_imágenes>/annotations/*.json`
+   - `<carpeta_imágenes>/masks/*_mask.png`
+   - `<carpeta_imágenes>/times/annotation_times.txt`
 - Navigating to another image (buttons, thumbnail jump, or arrow keys) triggers the same save process automatically before the image changes.
 - The timer log keeps both total and active annotation time per image, so you always have an up-to-date history without manual exports.
+- Si necesitas rutas personalizadas (por ejemplo, otro disco), abre la sección **Output Folders → Avanzado** en la barra lateral, ajusta las rutas y, si quieres volver a la estructura estándar, usa "Restaurar rutas por defecto".
 
 ## Keyboard Shortcuts
 

@@ -204,6 +204,8 @@ app.post('/api/save-json', (req, res) => {
     }
 
     const jsonString = JSON.stringify(data, null, 2);
+    const dirName = path.dirname(filePath);
+    fs.mkdirSync(dirName, { recursive: true });
     fs.writeFileSync(filePath, jsonString, 'utf-8');
     
     res.json({ success: true, message: 'JSON file saved successfully' });
@@ -229,7 +231,8 @@ app.post('/api/save-image', (req, res) => {
     // Extraer datos base64 (remover prefijo data:image/png;base64,)
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    
+    const dirName = path.dirname(filePath);
+    fs.mkdirSync(dirName, { recursive: true });
     fs.writeFileSync(filePath, buffer);
     
     res.json({ success: true, message: 'Image saved successfully' });
@@ -252,6 +255,8 @@ app.post('/api/save-text', (req, res) => {
       return res.status(400).json({ error: 'Path and content are required' });
     }
 
+    const dirName = path.dirname(filePath);
+    fs.mkdirSync(dirName, { recursive: true });
     fs.writeFileSync(filePath, content, 'utf-8');
 
     res.json({ success: true, message: 'Text file saved successfully' });

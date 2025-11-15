@@ -23,6 +23,15 @@ interface ToolbarProps {
   activeAnnotationTime: number;
   isTimerPaused: boolean;
   isCurrentImageCompleted: boolean;
+  outputPaths: {
+    annotations: string;
+    masks: string;
+    times: string;
+  } | null;
+  showOutputSettings: boolean;
+  onToggleOutputSettings: () => void;
+  onRequestOutputPathChange: (type: 'annotations' | 'masks' | 'times') => void;
+  onRestoreDefaultOutputPaths: () => void;
   onFileSelect: () => void;
   onClose: () => void;
   onPrevious: () => void;
@@ -99,7 +108,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
   onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
-  onSaveAll, onMarkAsComplete, isSaving
+  onSaveAll, onMarkAsComplete, isSaving, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
   const [newClassName, setNewClassName] = useState('');
@@ -214,6 +223,48 @@ const Toolbar: React.FC<ToolbarProps> = ({
             </div>
         </div>
       </div>
+
+      {outputPaths && (
+        <div className="mb-4 pb-4 border-b border-gray-700 text-xs text-gray-300 space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-400">Output Folders</h2>
+            <button
+              onClick={onToggleOutputSettings}
+              className="text-indigo-400 text-xs hover:text-indigo-200"
+            >
+              {showOutputSettings ? 'Ocultar' : 'Avanzado'}
+            </button>
+          </div>
+          {([
+            { label: 'Annotations (JSON)', key: 'annotations' as const },
+            { label: 'Masks (PNG)', key: 'masks' as const },
+            { label: 'Times (TXT)', key: 'times' as const }
+          ]).map(item => (
+            <div key={item.key} className="space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</p>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 truncate font-mono" title={outputPaths[item.key]}>{outputPaths[item.key]}</span>
+                {showOutputSettings && (
+                  <button
+                    onClick={() => onRequestOutputPathChange(item.key)}
+                    className="px-2 py-1 text-[11px] font-semibold bg-gray-700 rounded-md hover:bg-gray-600"
+                  >
+                    Cambiar
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {showOutputSettings && (
+            <button
+              onClick={onRestoreDefaultOutputPaths}
+              className="w-full mt-2 px-3 py-1.5 text-xs font-semibold bg-gray-700 text-white rounded-md hover:bg-gray-600"
+            >
+              Restaurar rutas por defecto
+            </button>
+          )}
+        </div>
+      )}
 
       {totalImages > 0 && (
         <div className="mb-4 pb-4 border-b border-gray-700">

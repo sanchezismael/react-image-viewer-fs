@@ -19,6 +19,12 @@ export interface AnnotationStats {
   allImages: { [className: string]: number };
 }
 
+type OutputPaths = {
+  annotations: string;
+  masks: string;
+  times: string;
+};
+
 const PALETTE = [
   'rgba(239, 68, 68, 0.5)',   // red
   'rgba(59, 130, 246, 0.5)',  // blue
@@ -69,6 +75,29 @@ const Confetti: React.FC = () => {
 };
 // --- End Confetti Component ---
 
+const trimTrailingSeparator = (value: string) => value.replace(/[\\/]+$/, '');
+const detectSeparator = (value: string) => (value.includes('\\') ? '\\' : '/');
+const joinPathSegments = (base: string, child: string) => {
+  if (!base) return child;
+  const sanitizedBase = trimTrailingSeparator(base);
+  const separator = detectSeparator(base);
+  const sanitizedChild = child.replace(/^[\\/]+/, '');
+  return `${sanitizedBase}${separator}${sanitizedChild}`;
+};
+
+const getDefaultOutputPaths = (baseDir: string): OutputPaths => {
+  if (!baseDir) {
+    return { annotations: '', masks: '', times: '' };
+  }
+  const cleanBase = trimTrailingSeparator(baseDir);
+  const separator = detectSeparator(cleanBase);
+  return {
+    annotations: `${cleanBase}${separator}annotations`,
+    masks: `${cleanBase}${separator}masks`,
+    times: `${cleanBase}${separator}times`
+  };
+};
+
 const App: React.FC = () => {
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
   const [imageUrls, setImageUrls] = useState<string[]>([]);
@@ -88,6 +117,8 @@ const App: React.FC = () => {
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [annotationStats, setAnnotationStats] = useState<AnnotationStats | null>(null);
+  const [outputPaths, setOutputPaths] = useState<OutputPaths | null>(null);
+  const [showOutputSettings, setShowOutputSettings] = useState(false);
   
   const [annotationTime, setAnnotationTime] = useState(0);
   const [allAnnotationTimes, setAllAnnotationTimes] = useState<Record<number, number>>({});
@@ -260,6 +291,8 @@ const App: React.FC = () => {
     setImageDimensions(null);
     setAllImageDimensions({});
     setAnnotationStats(null);
+  setOutputPaths(null);
+  setShowOutputSettings(false);
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -292,6 +325,7 @@ const App: React.FC = () => {
       const filesData = await getFiles(dirPath);
       setCurrentDirectory(dirPath);
       setImageFiles(filesData.images);
+  setOutputPaths(getDefaultOutputPaths(dirPath));
 
       const urls = filesData.images.map(img => img.url);
       const paths = filesData.images.map(img => img.path);
@@ -392,13 +426,6 @@ const App: React.FC = () => {
     setImageDimensions(null); // Reset dimensions to trigger loading for the new image
   }, [currentIndex, completedImages]);
 
-  const buildDirectoryFilePath = useCallback((fileName: string) => {
-    if (!currentDirectory) return '';
-    const trimmed = currentDirectory.replace(/[\\/]+$/, '');
-    const separator = trimmed.includes('\\') ? '\\' : '/';
-    return `${trimmed}${separator}${fileName}`;
-  }, [currentDirectory]);
-
   const formatTimeForFile = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
@@ -422,6 +449,11 @@ const App: React.FC = () => {
       return false;
     }
 
+    const effectiveOutputs = outputPaths || (currentDirectory ? getDefaultOutputPaths(currentDirectory) : null);
+    if (!effectiveOutputs) {
+      return false;
+    }
+
     if (saveInProgressRef.current) {
       return saveInProgressRef.current;
     }
@@ -430,8 +462,10 @@ const App: React.FC = () => {
       setIsSaving(true);
       try {
         const currentAnns = allAnnotations[currentIndex] || [];
-        const jsonPath = imagePaths[currentIndex]?.replace(/\.[^.]+$/, '.json');
-        const maskPath = imagePaths[currentIndex]?.replace(/\.[^.]+$/, '_mask.png');
+        const imageName = imageFiles[currentIndex].name;
+        const imageBaseName = imageName.replace(/\.[^.]+$/, '');
+        const jsonPath = joinPathSegments(effectiveOutputs.annotations, `${imageBaseName}.json`);
+        const maskPath = joinPathSegments(effectiveOutputs.masks, `${imageBaseName}_mask.png`);
 
         const timesSnapshot = { ...allAnnotationTimes };
         const activeSnapshot = { ...allActiveAnnotationTimes };
@@ -449,7 +483,7 @@ const App: React.FC = () => {
 
         if (jsonPath) {
           const exportData = {
-            imageName: imageFiles[currentIndex].name,
+            imageName,
             annotations: currentAnns.map(ann => ({
               className: ann.className,
               classId: classIdMap.get(ann.className),
@@ -490,7 +524,7 @@ const App: React.FC = () => {
           }
         }
 
-        const timesFilePath = buildDirectoryFilePath('annotation_times.txt');
+        const timesFilePath = joinPathSegments(effectiveOutputs.times, 'annotation_times.txt');
         if (timesFilePath) {
           const content = createTimesFileContent(timesSnapshot, activeSnapshot);
           operations.push(saveTextFile(timesFilePath, content));
@@ -513,7 +547,7 @@ const App: React.FC = () => {
     const result = await savePromise;
     saveInProgressRef.current = null;
     return result;
-  }, [imageFiles, currentIndex, allAnnotations, imagePaths, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, buildDirectoryFilePath, createTimesFileContent]);
+  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, outputPaths, currentDirectory, createTimesFileContent]);
 
   const goToPrevious = useCallback(async () => {
     const saved = await handleSaveAll();
@@ -592,6 +626,29 @@ const App: React.FC = () => {
         )
     );
   }, []);
+
+  const handleToggleOutputSettings = useCallback(() => {
+    setShowOutputSettings(prev => !prev);
+  }, []);
+
+  const handleRequestOutputPathChange = useCallback((type: keyof OutputPaths) => {
+    if (!outputPaths) return;
+    const labels: Record<keyof OutputPaths, string> = {
+      annotations: 'archivos JSON',
+      masks: 'máscaras PNG',
+      times: 'registro de tiempos'
+    };
+    const currentValue = outputPaths[type];
+    const newValue = window.prompt(`Nueva ruta para ${labels[type]}:`, currentValue);
+    if (newValue && newValue.trim()) {
+      setOutputPaths(prev => (prev ? { ...prev, [type]: newValue.trim() } : prev));
+    }
+  }, [outputPaths]);
+
+  const handleRestoreDefaultOutputPaths = useCallback(() => {
+    if (!currentDirectory) return;
+    setOutputPaths(getDefaultOutputPaths(currentDirectory));
+  }, [currentDirectory]);
 
   const handleMarkAsComplete = useCallback(() => {
     if (completedImages[currentIndex]) return;
@@ -729,6 +786,8 @@ const App: React.FC = () => {
           activeAnnotationTime={activeAnnotationTime}
           isTimerPaused={isTimerPaused}
           isCurrentImageCompleted={isCurrentImageCompleted}
+          outputPaths={outputPaths}
+          showOutputSettings={showOutputSettings}
           onFileSelect={triggerFileSelect}
           onClose={clearImages}
           onPrevious={goToPrevious}
@@ -746,6 +805,9 @@ const App: React.FC = () => {
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
           isSaving={isSaving}
+          onToggleOutputSettings={handleToggleOutputSettings}
+          onRequestOutputPathChange={handleRequestOutputPathChange}
+          onRestoreDefaultOutputPaths={handleRestoreDefaultOutputPaths}
         />
       )}
       
