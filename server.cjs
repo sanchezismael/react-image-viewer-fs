@@ -12,7 +12,9 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json());
+// Aumentar el límite de tamaño del payload para imágenes grandes
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 /**
  * Endpoint para listar contenido de un directorio
@@ -239,6 +241,31 @@ app.post('/api/save-image', (req, res) => {
   } catch (error) {
     console.error('Error saving image:', error);
     res.status(500).json({ error: 'Failed to save image', message: error.message });
+  }
+});
+
+/**
+ * Endpoint para leer un archivo de texto
+ * GET /api/text
+ * Query: { path: string }
+ */
+app.get('/api/text', (req, res) => {
+  try {
+    const filePath = req.query.path;
+
+    if (!filePath) {
+      return res.status(400).json({ error: 'Path parameter is required' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const content = fs.readFileSync(filePath, 'utf-8');
+    res.json({ content });
+  } catch (error) {
+    console.error('Error reading text file:', error);
+    res.status(500).json({ error: 'Failed to read text file', message: error.message });
   }
 });
 

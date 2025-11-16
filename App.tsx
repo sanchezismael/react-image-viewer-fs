@@ -3,7 +3,7 @@ import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import { TransformState } from './hooks/useImageTransform';
-import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, ImageFile } from './utils/api';
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, ImageFile } from './utils/api';
 
 export interface AnnotationClass {
   id: number;
@@ -45,6 +45,117 @@ const hexToRgba = (hex: string, alpha: number = 0.5): string => {
     const g = parseInt(result[2], 16);
     const b = parseInt(result[3], 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+// --- Rocket Launch Animation Component ---
+const RocketLaunchAnimation: React.FC = () => {
+  return (
+    <div className="relative w-full h-64 overflow-hidden bg-gradient-to-b from-blue-900 via-purple-900 to-black rounded-lg">
+      <style>{`
+        @keyframes rocketFly {
+          0% { 
+            transform: translateY(0) translateX(-50%) scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: translateY(-80px) translateX(-50%) scale(0.8);
+            opacity: 0.9;
+          }
+          100% { 
+            transform: translateY(-250px) translateX(-50%) scale(0.3);
+            opacity: 0;
+          }
+        }
+        @keyframes flame {
+          0%, 100% { 
+            transform: translateX(-50%) scaleY(1);
+            opacity: 0.8;
+          }
+          50% { 
+            transform: translateX(-50%) scaleY(1.3);
+            opacity: 1;
+          }
+        }
+        @keyframes smoke {
+          0% {
+            transform: translateY(0) scale(1);
+            opacity: 0.6;
+          }
+          100% {
+            transform: translateY(-100px) scale(2);
+            opacity: 0;
+          }
+        }
+        @keyframes star-twinkle {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 1; }
+        }
+        .rocket {
+          position: absolute;
+          bottom: 20%;
+          left: 50%;
+          font-size: 3rem;
+          animation: rocketFly 3s ease-in infinite;
+        }
+        .flame {
+          position: absolute;
+          bottom: calc(20% - 30px);
+          left: 50%;
+          font-size: 2rem;
+          animation: flame 0.2s ease-in-out infinite;
+        }
+        .smoke {
+          position: absolute;
+          bottom: calc(20% - 40px);
+          left: 50%;
+          font-size: 1.5rem;
+          animation: smoke 2s ease-out infinite;
+        }
+        .smoke:nth-child(2) { animation-delay: 0.3s; }
+        .smoke:nth-child(3) { animation-delay: 0.6s; }
+        .smoke:nth-child(4) { animation-delay: 0.9s; }
+        .star {
+          position: absolute;
+          color: white;
+          font-size: 0.5rem;
+          animation: star-twinkle 2s ease-in-out infinite;
+        }
+        .planet {
+          position: absolute;
+          font-size: 2rem;
+          opacity: 0.6;
+        }
+      `}</style>
+      
+      {/* Stars */}
+      <span className="star" style={{ top: '10%', left: '20%', animationDelay: '0s' }}>✨</span>
+      <span className="star" style={{ top: '25%', left: '80%', animationDelay: '0.5s' }}>✨</span>
+      <span className="star" style={{ top: '15%', left: '60%', animationDelay: '1s' }}>⭐</span>
+      <span className="star" style={{ top: '40%', left: '15%', animationDelay: '1.5s' }}>✨</span>
+      <span className="star" style={{ top: '35%', left: '85%', animationDelay: '0.8s' }}>⭐</span>
+      <span className="star" style={{ top: '50%', left: '50%', animationDelay: '0.3s' }}>✨</span>
+      
+      {/* Planet */}
+      <span className="planet" style={{ top: '10%', right: '10%' }}>🪐</span>
+      
+      {/* Smoke clouds */}
+      <span className="smoke">💨</span>
+      <span className="smoke">💨</span>
+      <span className="smoke">💨</span>
+      <span className="smoke">💨</span>
+      
+      {/* Flame */}
+      <span className="flame">🔥</span>
+      
+      {/* Rocket */}
+      <span className="rocket">🚀</span>
+      
+      {/* Launch text */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm font-bold">
+        🚀 Despegando hacia el espacio...
+      </div>
+    </div>
+  );
 };
 
 // --- Confetti Component ---
@@ -116,6 +227,7 @@ const App: React.FC = () => {
   const [allAnnotations, setAllAnnotations] = useState<Record<number, Annotation[]>>({});
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [annotationStats, setAnnotationStats] = useState<AnnotationStats | null>(null);
   const [outputPaths, setOutputPaths] = useState<OutputPaths | null>(null);
   const [showOutputSettings, setShowOutputSettings] = useState(false);
@@ -133,9 +245,13 @@ const App: React.FC = () => {
   const [isTimerPaused, setIsTimerPaused] = useState(false);
   const inactivityTimerRef = useRef<number | null>(null);
   const isTimerPausedRef = useRef(false);
+  const isActivelyDrawingRef = useRef(false);
 
   const [completedImages, setCompletedImages] = useState<Record<number, boolean>>({});
   const [showConfetti, setShowConfetti] = useState(false);
+
+  const [totalProjectTime, setTotalProjectTime] = useState(0);
+  const [totalActiveProjectTime, setTotalActiveProjectTime] = useState(0);
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
@@ -157,6 +273,17 @@ const App: React.FC = () => {
       imageUrls.forEach(url => URL.revokeObjectURL(url));
     };
   }, [imageUrls]);
+
+  // Effect to calculate total project times
+  useEffect(() => {
+    const totalTime = Object.values(allAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
+                      (completedImages[currentIndex] ? 0 : annotationTime);
+    const totalActive = Object.values(allActiveAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
+                        (completedImages[currentIndex] ? 0 : activeAnnotationTime);
+    
+    setTotalProjectTime(totalTime);
+    setTotalActiveProjectTime(totalActive);
+  }, [allAnnotationTimes, allActiveAnnotationTimes, annotationTime, activeAnnotationTime, currentIndex, completedImages]);
 
   // Effect to load image dimensions when the current image changes
   useEffect(() => {
@@ -192,12 +319,14 @@ const App: React.FC = () => {
   useEffect(() => {
     if (imageFiles.length === 0) {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (activeTimerRef.current) clearInterval(activeTimerRef.current);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
       return;
     }
 
     if (completedImages[currentIndex]) {
         if (timerRef.current) clearInterval(timerRef.current);
+        if (activeTimerRef.current) clearInterval(activeTimerRef.current);
         if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
         setAnnotationTime(allAnnotationTimes[currentIndex] || 0);
         setActiveAnnotationTime(allActiveAnnotationTimes[currentIndex] || 0);
@@ -206,6 +335,7 @@ const App: React.FC = () => {
     }
   
     if (timerRef.current) clearInterval(timerRef.current);
+    if (activeTimerRef.current) clearInterval(activeTimerRef.current);
     
     const savedTime = allAnnotationTimes[currentIndex] || 0;
     setAnnotationTime(savedTime);
@@ -214,14 +344,25 @@ const App: React.FC = () => {
     
     resetInactivityTimer();
   
+    // Total time timer - runs when there is activity (movement) or active drawing
     timerRef.current = window.setInterval(() => {
-      if (!isTimerPausedRef.current) {
+      if (!isTimerPausedRef.current || isActivelyDrawingRef.current) {
         setAnnotationTime(prev => prev + 1);
+        annotationTimeRef.current += 1;
+      }
+    }, 1000);
+
+    // Active time timer - only runs while actively drawing
+    activeTimerRef.current = window.setInterval(() => {
+      if (isActivelyDrawingRef.current) {
+        setActiveAnnotationTime(prev => prev + 1);
+        activeAnnotationTimeRef.current += 1;
       }
     }, 1000);
   
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (activeTimerRef.current) clearInterval(activeTimerRef.current);
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     };
   }, [currentIndex, imageFiles.length, resetInactivityTimer, allAnnotationTimes, allActiveAnnotationTimes, completedImages]);
@@ -319,13 +460,20 @@ const App: React.FC = () => {
 
   const handleDirectorySelect = async (dirPath: string) => {
     try {
+      console.log('═══════════════════════════════════════');
+      console.log('🚀 STARTING DIRECTORY LOAD');
+      console.log('📁 Selected path:', dirPath);
+      console.log('═══════════════════════════════════════');
+      
+      setIsLoadingProject(true);
       resetState();
       setShowDirectoryBrowser(false);
 
       const filesData = await getFiles(dirPath);
       setCurrentDirectory(dirPath);
       setImageFiles(filesData.images);
-  setOutputPaths(getDefaultOutputPaths(dirPath));
+      const defaultPaths = getDefaultOutputPaths(dirPath);
+      setOutputPaths(defaultPaths);
 
       const urls = filesData.images.map(img => img.url);
       const paths = filesData.images.map(img => img.path);
@@ -347,68 +495,168 @@ const App: React.FC = () => {
       }, {} as Record<number, {width: number, height: number}>);
       setAllImageDimensions(dimsRecord);
 
-      // Load JSON annotations if available
-      if (filesData.jsonFiles.length > 0) {
-        const jsonDataPromises = filesData.jsonFiles.map(jsonFile =>
-          readJsonFile(jsonFile.path).catch(err => {
-            console.error(`Error loading ${jsonFile.name}:`, err);
-            return null;
-          })
-        );
+      // Variable to store loaded annotations for use in times loading
+      let newAllAnnotations: Record<number, Annotation[]> = {};
 
-        const jsonContents = await Promise.all(jsonDataPromises);
-
-        const jsonAnnotationsMap = new Map<string, any[]>();
-        jsonContents.forEach((data, index) => {
-          if (data && data.annotations && Array.isArray(data.annotations)) {
-            const baseName = filesData.jsonFiles[index].name.split('.').slice(0, -1).join('.');
-            jsonAnnotationsMap.set(baseName, data.annotations);
-          }
+      // Load JSON annotations from the annotations subfolder
+      try {
+        const annotationsFolder = defaultPaths.annotations;
+        console.log('🔍 Looking for annotations in:', annotationsFolder);
+        console.log('📂 Base directory selected:', dirPath);
+        console.log('📸 Number of images found:', filesData.images.length);
+        
+        const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
+          console.log('⚠️ Annotations folder not found or empty:', err.message);
+          console.log('ℹ️ This is normal if you haven\'t saved annotations yet.');
+          console.log('ℹ️ Annotations will be saved to:', annotationsFolder);
+          return { images: [], jsonFiles: [] };
         });
-
-        const newAllAnnotations: Record<number, Annotation[]> = {};
-        const loadedClasses = new Map<string, { id: number }>();
-
-        filesData.images.forEach((imageFile, index) => {
-          const imageBaseName = imageFile.name.split('.').slice(0, -1).join('.');
-          const annotationsData = jsonAnnotationsMap.get(imageBaseName);
-
-          if (annotationsData) {
-            newAllAnnotations[index] = annotationsData.map((ann: any) => {
-              if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
-                loadedClasses.set(ann.className, { id: ann.classId });
-              }
-              return {
-                id: `${Date.now()}-${Math.random()}`,
-                points: ann.points,
-                className: ann.className,
-              };
+        
+        console.log('📁 Found JSON files:', annotationsFolderData.jsonFiles.length);
+        
+        if (annotationsFolderData.jsonFiles.length > 0) {
+          const jsonDataPromises = annotationsFolderData.jsonFiles.map(jsonFile => {
+            console.log('📄 Loading JSON file:', jsonFile.name);
+            return readJsonFile(jsonFile.path).catch(err => {
+              console.error(`❌ Error loading ${jsonFile.name}:`, err);
+              return null;
             });
+          });
+
+          const jsonContents = await Promise.all(jsonDataPromises);
+          console.log('✅ Loaded JSON contents:', jsonContents.filter(c => c !== null).length);
+
+          const jsonAnnotationsMap = new Map<string, any[]>();
+          jsonContents.forEach((data, index) => {
+            if (data && data.annotations && Array.isArray(data.annotations)) {
+              const baseName = annotationsFolderData.jsonFiles[index].name.split('.').slice(0, -1).join('.');
+              console.log(`📝 Mapping annotations for: ${baseName} (${data.annotations.length} annotations)`);
+              jsonAnnotationsMap.set(baseName, data.annotations);
+            }
+          });
+
+          const loadedClasses = new Map<string, { id: number }>();
+
+          filesData.images.forEach((imageFile, index) => {
+            const imageBaseName = imageFile.name.split('.').slice(0, -1).join('.');
+            const annotationsData = jsonAnnotationsMap.get(imageBaseName);
+
+            if (annotationsData) {
+              console.log(`✨ Found ${annotationsData.length} annotations for image: ${imageFile.name}`);
+              newAllAnnotations[index] = annotationsData.map((ann: any) => {
+                if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
+                  loadedClasses.set(ann.className, { id: ann.classId });
+                }
+                return {
+                  id: `${Date.now()}-${Math.random()}`,
+                  points: ann.points,
+                  className: ann.className,
+                };
+              });
+            } else {
+              console.log(`⭕ No annotations found for: ${imageFile.name}`);
+            }
+          });
+
+          const finalClasses: AnnotationClass[] = [];
+          let colorIndex = 0;
+          for (const [name, data] of loadedClasses.entries()) {
+            finalClasses.push({
+              name,
+              id: data.id,
+              color: PALETTE[colorIndex % PALETTE.length]
+            });
+            colorIndex++;
           }
+
+          finalClasses.sort((a, b) => a.id - b.id);
+
+          console.log('🎨 Loaded annotation classes:', finalClasses.map(c => `${c.name} (ID: ${c.id})`));
+          console.log('📊 Total annotations loaded:', Object.keys(newAllAnnotations).length, 'images with annotations');
+
+          setAnnotationClasses(finalClasses);
+          setAllAnnotations(newAllAnnotations);
+
+          if (finalClasses.length > 0) {
+            setSelectedAnnotationClass(finalClasses[0].name);
+          }
+        } else {
+          console.log('ℹ️ No JSON files found in annotations folder');
+        }
+      } catch (error) {
+        console.error('❌ Error loading annotations:', error);
+      }
+
+      // Load annotation times from times folder
+      try {
+        const timesFilePath = joinPathSegments(defaultPaths.times, 'annotation_times.txt');
+        console.log('⏱️ Looking for times file:', timesFilePath);
+        
+        const timesContent = await readTextFile(timesFilePath).catch((err) => {
+          console.log('ℹ️ Times file not found, starting fresh');
+          return null;
         });
 
-        const finalClasses: AnnotationClass[] = [];
-        let colorIndex = 0;
-        for (const [name, data] of loadedClasses.entries()) {
-          finalClasses.push({
-            name,
-            id: data.id,
-            color: PALETTE[colorIndex % PALETTE.length]
+        if (timesContent) {
+          console.log('⏱️ Parsing times file...');
+          const loadedTimes: Record<number, number> = {};
+          const loadedActiveTimes: Record<number, number> = {};
+          const loadedCompleted: Record<number, boolean> = {};
+
+          const lines = timesContent.split('\n');
+          let currentImageIndex = -1;
+
+          filesData.images.forEach((imageFile, index) => {
+            const imageName = imageFile.name;
+            const imageLineIndex = lines.findIndex(line => line.trim() === `${imageName}:`);
+            
+            if (imageLineIndex !== -1) {
+              // Parse total time
+              const totalTimeLine = lines[imageLineIndex + 1];
+              if (totalTimeLine && totalTimeLine.includes('Total Time:')) {
+                const match = totalTimeLine.match(/(\d+) minute\(s\) (\d+) second\(s\)/);
+                if (match) {
+                  const minutes = parseInt(match[1]);
+                  const seconds = parseInt(match[2]);
+                  loadedTimes[index] = minutes * 60 + seconds;
+                }
+              }
+
+              // Parse active time
+              const activeTimeLine = lines[imageLineIndex + 2];
+              if (activeTimeLine && activeTimeLine.includes('Active Annotation Time:')) {
+                const match = activeTimeLine.match(/(\d+) minute\(s\) (\d+) second\(s\)/);
+                if (match) {
+                  const minutes = parseInt(match[1]);
+                  const seconds = parseInt(match[2]);
+                  loadedActiveTimes[index] = minutes * 60 + seconds;
+                }
+              }
+
+              // If there's time recorded, consider it as having been worked on
+              if (loadedTimes[index] > 0) {
+                // Check if there are annotations for this image
+                if (newAllAnnotations[index] && newAllAnnotations[index].length > 0) {
+                  loadedCompleted[index] = true;
+                }
+              }
+            }
           });
-          colorIndex++;
+
+          console.log('✅ Loaded times for', Object.keys(loadedTimes).length, 'images');
+          setAllAnnotationTimes(loadedTimes);
+          setAllActiveAnnotationTimes(loadedActiveTimes);
+          setCompletedImages(loadedCompleted);
         }
-
-        finalClasses.sort((a, b) => a.id - b.id);
-
-        setAnnotationClasses(finalClasses);
-        setAllAnnotations(newAllAnnotations);
-
-        if (finalClasses.length > 0) {
-          setSelectedAnnotationClass(finalClasses[0].name);
-        }
+      } catch (error) {
+        console.error('❌ Error loading times:', error);
       }
+
+      setIsLoadingProject(false);
+      console.log('✅ PROJECT LOADED SUCCESSFULLY');
     } catch (error) {
       console.error('Error loading directory:', error);
+      setIsLoadingProject(false);
       alert(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
@@ -550,21 +798,18 @@ const App: React.FC = () => {
   }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, outputPaths, currentDirectory, createTimesFileContent]);
 
   const goToPrevious = useCallback(async () => {
-    const saved = await handleSaveAll();
-    if (!saved) return;
+    await handleSaveAll({ silent: true });
     changeImage(currentIndex === 0 ? imageFiles.length - 1 : currentIndex - 1);
   }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
 
   const goToNext = useCallback(async () => {
-    const saved = await handleSaveAll();
-    if (!saved) return;
+    await handleSaveAll({ silent: true });
     changeImage(currentIndex === imageFiles.length - 1 ? 0 : currentIndex + 1);
   }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
 
   const goToIndex = useCallback(async (index: number) => {
     if (index >= 0 && index < imageFiles.length) {
-      const saved = await handleSaveAll();
-      if (!saved) return;
+      await handleSaveAll({ silent: true });
       changeImage(index);
     } else {
       alert(`Please enter a number between 1 and ${imageFiles.length}.`);
@@ -572,19 +817,69 @@ const App: React.FC = () => {
   }, [imageFiles.length, changeImage, handleSaveAll]);
 
   const handleAddAnnotation = useCallback((newAnnotation: Omit<Annotation, 'id'>) => {
-    if (!selectedAnnotationClass || completedImages[currentIndex]) return;
+    if (!selectedAnnotationClass) return;
+    
+    // Si la imagen estaba completada, desmarcarla al hacer cambios
+    if (completedImages[currentIndex]) {
+      setCompletedImages(prev => {
+        const updated = { ...prev };
+        delete updated[currentIndex];
+        return updated;
+      });
+      setShowConfetti(false);
+      
+      // Reiniciar el timer para esta imagen
+      const savedTime = allAnnotationTimes[currentIndex] || 0;
+      setAnnotationTime(savedTime);
+      const savedActiveTime = allActiveAnnotationTimes[currentIndex] || 0;
+      setActiveAnnotationTime(savedActiveTime);
+      setIsTimerPaused(false);
+      resetInactivityTimer();
+      
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(() => {
+        if (!isTimerPausedRef.current) {
+          setAnnotationTime(prev => prev + 1);
+        }
+      }, 1000);
+    }
+    
     const id = `${Date.now()}-${Math.random()}`;
     const annotationWithId = { ...newAnnotation, id, className: selectedAnnotationClass };
     setAllAnnotations(prev => {
         const currentAnns = prev[currentIndex] || [];
         return { ...prev, [currentIndex]: [...currentAnns, annotationWithId] };
     });
-  }, [currentIndex, selectedAnnotationClass, completedImages]);
+  }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer]);
 
   const handleSelectAnnotation = useCallback((id: string | null) => setSelectedAnnotationId(id), []);
 
   const handleDeleteAnnotation = useCallback((id: string) => {
-    if (completedImages[currentIndex]) return;
+    // Si la imagen estaba completada, desmarcarla al hacer cambios
+    if (completedImages[currentIndex]) {
+      setCompletedImages(prev => {
+        const updated = { ...prev };
+        delete updated[currentIndex];
+        return updated;
+      });
+      setShowConfetti(false);
+      
+      // Reiniciar el timer para esta imagen
+      const savedTime = allAnnotationTimes[currentIndex] || 0;
+      setAnnotationTime(savedTime);
+      const savedActiveTime = allActiveAnnotationTimes[currentIndex] || 0;
+      setActiveAnnotationTime(savedActiveTime);
+      setIsTimerPaused(false);
+      resetInactivityTimer();
+      
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = window.setInterval(() => {
+        if (!isTimerPausedRef.current) {
+          setAnnotationTime(prev => prev + 1);
+        }
+      }, 1000);
+    }
+    
     setAllAnnotations(prev => ({
         ...prev,
         [currentIndex]: (prev[currentIndex] || []).filter(ann => ann.id !== id)
@@ -592,14 +887,13 @@ const App: React.FC = () => {
     if (selectedAnnotationId === id) {
         setSelectedAnnotationId(null);
     }
-  }, [currentIndex, selectedAnnotationId, completedImages]);
+  }, [currentIndex, selectedAnnotationId, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer]);
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
   const handleToggleDrawingMode = useCallback(() => {
-    if (completedImages[currentIndex]) return;
     setIsDrawingMode(prev => !prev);
-  }, [completedImages, currentIndex]);
+  }, []);
 
   const handleSelectAnnotationClass = useCallback((className: string) => setSelectedAnnotationClass(className), []);
 
@@ -651,8 +945,19 @@ const App: React.FC = () => {
   }, [currentDirectory]);
 
   const handleMarkAsComplete = useCallback(() => {
-    if (completedImages[currentIndex]) return;
+    // Toggle: if already completed, unmark it
+    if (completedImages[currentIndex]) {
+      console.log('🔓 Unmarking image as complete - resuming timers');
+      setCompletedImages(prev => {
+        const newCompleted = { ...prev };
+        delete newCompleted[currentIndex];
+        return newCompleted;
+      });
+      // Timers will restart automatically via useEffect
+      return;
+    }
 
+    console.log('✅ Marking image as complete - stopping timers');
     if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -739,17 +1044,12 @@ const App: React.FC = () => {
   };
 
   const startActiveTimer = useCallback(() => {
-    if (activeTimerRef.current || completedImages[currentIndex]) return;
-    activeTimerRef.current = window.setInterval(() => {
-        setActiveAnnotationTime(prev => prev + 1);
-    }, 1000);
-  }, [completedImages, currentIndex]);
+    isActivelyDrawingRef.current = true;
+    resetInactivityTimer();
+  }, [resetInactivityTimer]);
 
   const stopActiveTimer = useCallback(() => {
-    if (activeTimerRef.current) {
-        clearInterval(activeTimerRef.current);
-        activeTimerRef.current = null;
-    }
+    isActivelyDrawingRef.current = false;
   }, []);
 
   const currentAnnotations = allAnnotations[currentIndex] || [];
@@ -760,6 +1060,25 @@ const App: React.FC = () => {
   return (
     <div className="w-screen h-screen bg-gray-900 flex flex-row overflow-hidden font-sans">
       {showConfetti && <Confetti />}
+      
+      {/* Loading overlay with Rocket animation */}
+      {isLoadingProject && (
+        <div className="fixed inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center">
+          <div className="bg-gray-800 p-6 rounded-lg shadow-2xl text-center" style={{ maxWidth: '500px' }}>
+            <h2 className="text-2xl font-bold mb-4 text-white">Cargando Proyecto</h2>
+            
+            <RocketLaunchAnimation />
+            
+            <p className="text-gray-300 mt-4 mb-2">Leyendo anotaciones y tiempos guardados...</p>
+            
+            {/* Loading bar */}
+            <div className="mt-3 w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+              <div className="bg-blue-500 h-full rounded-full animate-pulse" style={{ width: '100%' }}></div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {showDirectoryBrowser && (
         <DirectoryBrowser
           onSelectDirectory={handleDirectorySelect}
@@ -786,6 +1105,8 @@ const App: React.FC = () => {
           activeAnnotationTime={activeAnnotationTime}
           isTimerPaused={isTimerPaused}
           isCurrentImageCompleted={isCurrentImageCompleted}
+          totalProjectTime={totalProjectTime}
+          totalActiveProjectTime={totalActiveProjectTime}
           outputPaths={outputPaths}
           showOutputSettings={showOutputSettings}
           onFileSelect={triggerFileSelect}

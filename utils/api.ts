@@ -162,6 +162,24 @@ export async function saveImageFile(filePath: string, base64Data: string): Promi
 }
 
 /**
+ * Leer contenido de un archivo de texto
+ */
+export async function readTextFile(filePath: string): Promise<string> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/text?path=${encodeURIComponent(filePath)}`);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Failed to read text: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.content;
+  } catch (error) {
+    console.error('Error reading text file:', error);
+    throw error;
+  }
+}
+
+/**
  * Guardar un archivo de texto plano
  */
 export async function saveTextFile(filePath: string, content: string): Promise<void> {
