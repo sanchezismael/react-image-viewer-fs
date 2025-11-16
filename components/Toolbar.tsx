@@ -23,6 +23,8 @@ interface ToolbarProps {
   activeAnnotationTime: number;
   isTimerPaused: boolean;
   isCurrentImageCompleted: boolean;
+  totalProjectTime: number;
+  totalActiveProjectTime: number;
   outputPaths: {
     annotations: string;
     masks: string;
@@ -106,7 +108,7 @@ const StatsSection: React.FC<{
 const Toolbar: React.FC<ToolbarProps> = ({
   images, currentIndex, transform, isDrawingMode, annotations, annotationClasses, selectedAnnotationClass,
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
-  annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
+  annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, totalProjectTime, totalActiveProjectTime, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
   onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
   onSaveAll, onMarkAsComplete, isSaving, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
@@ -169,14 +171,17 @@ const Toolbar: React.FC<ToolbarProps> = ({
             {isSaving ? 'Saving…' : 'Guardar cambios'}
           </button>
           <button 
-            onClick={onMarkAsComplete} 
-            disabled={isCurrentImageCompleted}
-            className="col-span-2 px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500 flex items-center justify-center gap-2"
+            onClick={onMarkAsComplete}
+            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 flex items-center justify-center gap-2 ${
+              isCurrentImageCompleted 
+                ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500 text-white' 
+                : 'bg-green-600 hover:bg-green-700 focus:ring-green-500 text-white'
+            }`}
           >
             {isCurrentImageCompleted ? (
               <>
                 <CheckIcon className="w-5 h-5" />
-                <span>Completed</span>
+                <span>Unmark Complete</span>
               </>
             ) : (
               'Mark as Complete'
@@ -205,7 +210,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       <div className="mb-4 pb-4 border-b border-gray-700">
-        <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Timers</h2>
+        <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Current Image Timer</h2>
         <div className="space-y-2">
             <div className="p-2 bg-gray-700/50 rounded-lg flex justify-between items-center" title={`Total Time${isTimerPaused ? ' (Paused)' : ''}`}>
                <div className="flex items-center gap-2 text-gray-300">
@@ -220,6 +225,26 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   <span className="text-sm">Active Time</span>
                </div>
                <span className="font-mono text-lg text-cyan-400">{formatTime(activeAnnotationTime)}</span>
+            </div>
+        </div>
+      </div>
+
+      <div className="mb-4 pb-4 border-b border-gray-700">
+        <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Total Project Time</h2>
+        <div className="space-y-2">
+            <div className="p-2 bg-indigo-900/30 rounded-lg flex justify-between items-center border border-indigo-500/30" title="Total Time Across All Images">
+               <div className="flex items-center gap-2 text-gray-300">
+                  <ClockIcon className="w-5 h-5 text-indigo-400" />
+                  <span className="text-sm font-semibold">Total</span>
+               </div>
+               <span className="font-mono text-lg font-bold text-indigo-300">{formatTime(totalProjectTime)}</span>
+            </div>
+            <div className="p-2 bg-cyan-900/30 rounded-lg flex justify-between items-center border border-cyan-500/30" title="Total Active Time Across All Images">
+               <div className="flex items-center gap-2 text-gray-300">
+                  <PencilIcon className="w-5 h-5 text-cyan-400" />
+                  <span className="text-sm font-semibold">Active</span>
+               </div>
+               <span className="font-mono text-lg font-bold text-cyan-300">{formatTime(totalActiveProjectTime)}</span>
             </div>
         </div>
       </div>
@@ -361,7 +386,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colorMap.get(ann.className) }}></span>
                   <span className="truncate">{`Annotation ${index + 1} (${ann.className})`}</span>
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); onDeleteAnnotation(ann.id); }} disabled={isCurrentImageCompleted} className="p-1 rounded-full hover:bg-red-500/50 text-gray-400 hover:text-white flex-shrink-0 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); onDeleteAnnotation(ann.id); }} className="p-1 rounded-full hover:bg-red-500/50 text-gray-400 hover:text-white flex-shrink-0">
                   <TrashIcon className="w-4 h-4" />
                 </button>
               </button>
