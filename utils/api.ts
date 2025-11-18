@@ -17,6 +17,7 @@ export interface ImageFile {
   name: string;
   path: string;
   url: string;
+  modifiedAt?: string;
 }
 
 export interface JsonFile {
@@ -38,6 +39,21 @@ export interface Drive {
 
 export interface DrivesResponse {
   drives: Drive[];
+}
+
+export interface DeleteImagePayload {
+  imagePath: string;
+  annotationPath?: string;
+  maskPath?: string;
+}
+
+export interface DeleteImageResponse {
+  success: boolean;
+  deleted: {
+    image: boolean;
+    annotation: boolean;
+    mask: boolean;
+  };
 }
 
 /**
@@ -198,6 +214,31 @@ export async function saveTextFile(filePath: string, content: string): Promise<v
     }
   } catch (error) {
     console.error('Error saving text file:', error);
+    throw error;
+  }
+}
+
+/**
+ * Eliminar una imagen y sus archivos asociados
+ */
+export async function deleteImageAssets(payload: DeleteImagePayload): Promise<DeleteImageResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/delete-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Failed to delete image: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error deleting image:', error);
     throw error;
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TransformState } from '../hooks/useImageTransform';
-import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, MinusIcon, PencilIcon, PlusIcon, ResetIcon, TrashIcon } from './icons';
+import { ChartIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, MinusIcon, PencilIcon, PlusIcon, ResetIcon, TrashIcon } from './icons';
 import { Annotation, AnnotationClass, AnnotationStats } from '../App';
 import { ImageFile } from '../utils/api';
 import DonutChart from './DonutChart';
@@ -50,7 +50,10 @@ interface ToolbarProps {
   onDeleteAnnotation: (id: string) => void;
   onSaveAll: () => void | Promise<void>;
   onMarkAsComplete: () => void;
+  onDeleteCurrentImage: () => void;
+  onOpenDashboard: () => void;
   isSaving: boolean;
+  isDeletingImage: boolean;
 }
 
 const rgbaToHex = (rgba: string): string => {
@@ -110,7 +113,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, totalProjectTime, totalActiveProjectTime, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
   onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
-  onSaveAll, onMarkAsComplete, isSaving, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
+  onSaveAll, onMarkAsComplete, onDeleteCurrentImage, onOpenDashboard, isSaving, isDeletingImage, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
   const [newClassName, setNewClassName] = useState('');
@@ -170,6 +173,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
           >
             {isSaving ? 'Saving…' : 'Guardar cambios'}
           </button>
+          <button
+            onClick={onOpenDashboard}
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-md hover:bg-purple-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 flex items-center justify-center gap-2"
+          >
+            <ChartIcon className="w-5 h-5" />
+            <span>Dashboard</span>
+          </button>
           <button 
             onClick={onMarkAsComplete}
             className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 flex items-center justify-center gap-2 ${
@@ -186,6 +196,16 @@ const Toolbar: React.FC<ToolbarProps> = ({
             ) : (
               'Mark as Complete'
             )}
+          </button>
+          <button
+            onClick={onDeleteCurrentImage}
+            disabled={isDeletingImage}
+            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 flex items-center justify-center gap-2 ${
+              isDeletingImage ? 'bg-gray-600 cursor-wait text-white' : 'bg-red-700 hover:bg-red-800 focus:ring-red-500 text-white'
+            }`}
+          >
+            <TrashIcon className="w-5 h-5" />
+            <span>{isDeletingImage ? 'Deleting…' : 'Delete Image'}</span>
           </button>
         </div>
       </div>
