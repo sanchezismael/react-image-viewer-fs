@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
 import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
 import DashboardModal from './components/DashboardModal';
@@ -6,8 +7,13 @@ import DirectoryBrowser from './components/DirectoryBrowser';
 import Confetti from './components/Confetti';
 import RocketLaunchAnimation from './components/RocketLaunchAnimation';
 import { TransformState } from './hooks/useImageTransform';
-import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, ImageFile, deleteImageAssets } from './utils/api';
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, deleteImageAssets } from './utils/api';
 import { DashboardEntry } from './types/dashboard';
+import { useTimer } from './hooks/useTimer';
+import { useProjectData } from './hooks/useProjectData';
+import { useAnnotations } from './hooks/useAnnotations';
+import { CONFIG_FILE_NAME, DASHBOARD_STATS_FILE, MAX_DASHBOARD_ENTRIES, PALETTE } from './utils/constants';
+import { joinPathSegments, getDefaultOutputPaths, OutputPaths, hexToRgba } from './utils/helpers';
 
 export interface AnnotationClass {
   id: number;
@@ -22,74 +28,6 @@ export interface AnnotationStats {
   currentImage: { [className: string]: number };
   allImages: { [className: string]: number };
 }
-
-type OutputPaths = {
-  annotations: string;
-  masks: string;
-  times: string;
-};
-
-const CONFIG_FILE_NAME = '.viewer-config.json';
-const DASHBOARD_STATS_FILE = 'annotation_dashboard.json';
-const MAX_DASHBOARD_ENTRIES = 1000;
-
-const PALETTE = [
-  'rgba(239, 68, 68, 0.5)',   // red
-  'rgba(59, 130, 246, 0.5)',  // blue
-  'rgba(34, 197, 94, 0.5)',   // green
-  'rgba(249, 115, 22, 0.5)',  // orange
-  'rgba(168, 85, 247, 0.5)',  // purple
-  'rgba(236, 72, 153, 0.5)',  // pink
-  'rgba(14, 165, 233, 0.5)',  // sky
-  'rgba(245, 158, 11, 0.5)',  // amber
-];
-
-const hexToRgba = (hex: string, alpha: number = 0.5): string => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) {
-        return `rgba(255, 255, 255, ${alpha})`; // fallback
-    }
-    const r = parseInt(result[1], 16);
-    const g = parseInt(result[2], 16);
-    const b = parseInt(result[3], 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-};
-
-
-const trimTrailingSeparator = (value: string) => value.replace(/[\\/]+$/, '');
-const detectSeparator = (value: string) => (value.includes('\\') ? '\\' : '/');
-const joinPathSegments = (base: string, child: string) => {
-  if (!base) return child;
-  const sanitizedBase = trimTrailingSeparator(base);
-  const separator = detectSeparator(base);
-  const sanitizedChild = child.replace(/^[\\/]+/, '');
-  return `${sanitizedBase}${separator}${sanitizedChild}`;
-};
-
-const remapRecordAfterRemoval = <T,>(record: Record<number, T>, removedIndex: number): Record<number, T> => {
-  return Object.keys(record).reduce((acc, key) => {
-    const idx = parseInt(key, 10);
-    if (Number.isNaN(idx) || idx === removedIndex) {
-      return acc;
-    }
-    const newIdx = idx > removedIndex ? idx - 1 : idx;
-    acc[newIdx] = record[idx];
-    return acc;
-  }, {} as Record<number, T>);
-};
-
-const getDefaultOutputPaths = (baseDir: string): OutputPaths => {
-  if (!baseDir) {
-    return { annotations: '', masks: '', times: '' };
-  }
-  const cleanBase = trimTrailingSeparator(baseDir);
-  const separator = detectSeparator(cleanBase);
-  return {
-    annotations: `${cleanBase}${separator}annotations`,
-    masks: `${cleanBase}${separator}masks`,
-    times: `${cleanBase}${separator}times`
-  };
-};
 
 const polygonArea = (points: Point[]) => {
   let area = 0;
@@ -110,7 +48,7 @@ const appendDashboardEntry = (entries: DashboardEntry[], entry: DashboardEntry) 
 };
 
 const buildHistoricalDashboardEntries = (
-  files: ImageFile[],
+  files: any[],
   annotations: Record<number, Annotation[]>,
   totalTimes: Record<number, number>,
   activeTimes: Record<number, number>
@@ -145,50 +83,86 @@ const buildHistoricalDashboardEntries = (
 };
 
 const App: React.FC = () => {
-  const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
-  const [currentDirectory, setCurrentDirectory] = useState<string>('');
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
-  const [allImageDimensions, setAllImageDimensions] = useState<Record<number, {width: number, height: number}>>({});
+  const {
+    imageFiles,
+    currentDirectory,
+    currentIndex,
+    imageDimensions,
+    allImageDimensions,
+    isLoadingProject,
+    completedImages,
+    outputPaths,
+    showDirectoryBrowser,
+    isDeletingImage,
+    setImageFiles,
+    setCurrentDirectory,
+    setCurrentIndex,
+    setImageDimensions,
+    setAllImageDimensions,
+    setIsLoadingProject,
+    setCompletedImages,
+    setOutputPaths,
+    setShowDirectoryBrowser,
+    setIsDeletingImage,
+    handleDirectorySelect: loadDirectory,
+    goToPrevious: navigatePrevious,
+    goToNext: navigateNext,
+    goToIndex: navigateToIndex,
+    triggerFileSelect
+  } = useProjectData();
+
+  const {
+    annotationClasses,
+    selectedAnnotationClass,
+    allAnnotations,
+    selectedAnnotationId,
+    annotationStats,
+    isSaving,
+    setAnnotationClasses,
+    setSelectedAnnotationClass,
+    setAllAnnotations,
+    setSelectedAnnotationId,
+    setAnnotationStats,
+    setIsSaving,
+    handleAddAnnotationClass,
+    handleUpdateAnnotationClassColor,
+    handleSelectAnnotationClass,
+    handleAddAnnotation: addAnnotation,
+    handleSelectAnnotation,
+    handleDeleteAnnotation: deleteAnnotation
+  } = useAnnotations(currentIndex);
+
+  const {
+    annotationTime,
+    activeAnnotationTime,
+    allAnnotationTimes,
+    allActiveAnnotationTimes,
+    isTimerPaused,
+    totalProjectTime,
+    totalActiveProjectTime,
+    setAnnotationTime,
+    setActiveAnnotationTime,
+    setAllAnnotationTimes,
+    setAllActiveAnnotationTimes,
+    setIsTimerPaused,
+    resetInactivityTimer,
+    startActiveTimer,
+    stopActiveTimer,
+    resetTimersForNewImage,
+    clearTimers
+  } = useTimer(currentIndex, !!completedImages[currentIndex]);
+
   const [activeTransform, setActiveTransform] = useState<TransformState>({ scale: 1, x: 0, y: 0 });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
-  const [showDirectoryBrowser, setShowDirectoryBrowser] = useState(false);
-  
-  const [annotationClasses, setAnnotationClasses] = useState<AnnotationClass[]>([]);
-  const [selectedAnnotationClass, setSelectedAnnotationClass] = useState<string | null>(null);
-
-  const [allAnnotations, setAllAnnotations] = useState<Record<number, Annotation[]>>({});
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoadingProject, setIsLoadingProject] = useState(false);
-  const [annotationStats, setAnnotationStats] = useState<AnnotationStats | null>(null);
-  const [outputPaths, setOutputPaths] = useState<OutputPaths | null>(null);
   const [showOutputSettings, setShowOutputSettings] = useState(false);
-  
-  const [annotationTime, setAnnotationTime] = useState(0);
-  const [allAnnotationTimes, setAllAnnotationTimes] = useState<Record<number, number>>({});
-  const timerRef = useRef<number | null>(null);
-  const annotationTimeRef = useRef(0);
-
-  const [activeAnnotationTime, setActiveAnnotationTime] = useState(0);
-  const [allActiveAnnotationTimes, setAllActiveAnnotationTimes] = useState<Record<number, number>>({});
-  const activeTimerRef = useRef<number | null>(null);
-  const activeAnnotationTimeRef = useRef(0);
-
-  const [isTimerPaused, setIsTimerPaused] = useState(false);
-  const inactivityTimerRef = useRef<number | null>(null);
-  const isTimerPausedRef = useRef(false);
-  const isActivelyDrawingRef = useRef(false);
-
-  const [completedImages, setCompletedImages] = useState<Record<number, boolean>>({});
   const [showConfetti, setShowConfetti] = useState(false);
-
-  const [totalProjectTime, setTotalProjectTime] = useState(0);
-  const [totalActiveProjectTime, setTotalActiveProjectTime] = useState(0);
-  const [isDeletingImage, setIsDeletingImage] = useState(false);
   const [dashboardEntries, setDashboardEntries] = useState<DashboardEntry[]>([]);
   const dashboardEntriesRef = useRef<DashboardEntry[]>([]);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+
+  const imageViewerRef = useRef<ImageViewerApi>(null);
+  const saveInProgressRef = useRef<Promise<boolean> | null>(null);
+
   const liveDashboardEntries = React.useMemo(() => {
     if (imageFiles.length === 0) {
       return [] as DashboardEntry[];
@@ -196,26 +170,12 @@ const App: React.FC = () => {
     const timesSnapshot = { ...allAnnotationTimes };
     const activeSnapshot = { ...allActiveAnnotationTimes };
     if (!completedImages[currentIndex]) {
-      timesSnapshot[currentIndex] = annotationTimeRef.current;
-      activeSnapshot[currentIndex] = activeAnnotationTimeRef.current;
+      timesSnapshot[currentIndex] = annotationTime;
+      activeSnapshot[currentIndex] = activeAnnotationTime;
     }
     return buildHistoricalDashboardEntries(imageFiles, allAnnotations, timesSnapshot, activeSnapshot);
   }, [imageFiles, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, currentIndex, completedImages, annotationTime, activeAnnotationTime]);
 
-  const imageViewerRef = useRef<ImageViewerApi>(null);
-  const saveInProgressRef = useRef<Promise<boolean> | null>(null);
-  
-  useEffect(() => {
-    annotationTimeRef.current = annotationTime;
-  }, [annotationTime]);
-
-  useEffect(() => {
-    activeAnnotationTimeRef.current = activeAnnotationTime;
-  }, [activeAnnotationTime]);
-
-  useEffect(() => {
-    isTimerPausedRef.current = isTimerPaused;
-  }, [isTimerPaused]);
   useEffect(() => {
     dashboardEntriesRef.current = dashboardEntries;
   }, [dashboardEntries]);
@@ -258,99 +218,6 @@ const App: React.FC = () => {
     }
     void hydrateDashboardEntries(outputPaths.times);
   }, [outputPaths?.times, hydrateDashboardEntries]);
-  // Effect to calculate total project times
-  useEffect(() => {
-    const totalTime = Object.values(allAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
-                      (completedImages[currentIndex] ? 0 : annotationTime);
-    const totalActive = Object.values(allActiveAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
-                        (completedImages[currentIndex] ? 0 : activeAnnotationTime);
-    
-    setTotalProjectTime(totalTime);
-    setTotalActiveProjectTime(totalActive);
-  }, [allAnnotationTimes, allActiveAnnotationTimes, annotationTime, activeAnnotationTime, currentIndex, completedImages]);
-
-  // Effect to load image dimensions when the current image changes
-  const currentImageUrl = imageFiles[currentIndex]?.url ?? null;
-
-  useEffect(() => {
-    if (!currentImageUrl) {
-      setImageDimensions(null);
-      return;
-    }
-
-    const img = new Image();
-    img.onload = () => {
-      setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
-    };
-    img.onerror = () => setImageDimensions(null);
-    img.src = currentImageUrl;
-  }, [currentImageUrl]);
-
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-    }
-    
-    if (isTimerPausedRef.current) {
-        setIsTimerPaused(false);
-    }
-
-    inactivityTimerRef.current = window.setTimeout(() => {
-        setIsTimerPaused(true);
-    }, 5000); // 5 seconds of inactivity
-  }, []);
-
-  // Effect to manage the annotation timer
-  useEffect(() => {
-    if (imageFiles.length === 0) {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (activeTimerRef.current) clearInterval(activeTimerRef.current);
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-      return;
-    }
-
-    if (completedImages[currentIndex]) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        if (activeTimerRef.current) clearInterval(activeTimerRef.current);
-        if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-        setAnnotationTime(allAnnotationTimes[currentIndex] || 0);
-        setActiveAnnotationTime(allActiveAnnotationTimes[currentIndex] || 0);
-        setIsTimerPaused(true);
-        return;
-    }
-  
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (activeTimerRef.current) clearInterval(activeTimerRef.current);
-    
-    const savedTime = allAnnotationTimes[currentIndex] || 0;
-    setAnnotationTime(savedTime);
-    const savedActiveTime = allActiveAnnotationTimes[currentIndex] || 0;
-    setActiveAnnotationTime(savedActiveTime);
-    
-    resetInactivityTimer();
-  
-    // Total time timer - runs when there is activity (movement) or active drawing
-    timerRef.current = window.setInterval(() => {
-      if (!isTimerPausedRef.current || isActivelyDrawingRef.current) {
-        setAnnotationTime(prev => prev + 1);
-        annotationTimeRef.current += 1;
-      }
-    }, 1000);
-
-    // Active time timer - only runs while actively drawing
-    activeTimerRef.current = window.setInterval(() => {
-      if (isActivelyDrawingRef.current) {
-        setActiveAnnotationTime(prev => prev + 1);
-        activeAnnotationTimeRef.current += 1;
-      }
-    }, 1000);
-  
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      if (activeTimerRef.current) clearInterval(activeTimerRef.current);
-      if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
-    };
-  }, [currentIndex, imageFiles.length, resetInactivityTimer, allAnnotationTimes, allActiveAnnotationTimes, completedImages]);
 
   // Effect to calculate annotation statistics
   useEffect(() => {
@@ -358,16 +225,6 @@ const App: React.FC = () => {
       setAnnotationStats(null);
       return;
     }
-
-    const polygonArea = (points: Point[]) => {
-      let area = 0;
-      for (let i = 0; i < points.length; i++) {
-        const j = (i + 1) % points.length;
-        area += points[i].x * points[j].y;
-        area -= points[j].x * points[i].y;
-      }
-      return Math.abs(area / 2);
-    };
 
     const newStats: AnnotationStats = {
       currentImage: {},
@@ -400,7 +257,7 @@ const App: React.FC = () => {
     
     setAnnotationStats(newStats);
 
-  }, [allAnnotations, allImageDimensions, currentIndex, annotationClasses]);
+  }, [allAnnotations, allImageDimensions, currentIndex, annotationClasses, setAnnotationStats]);
 
   const resetState = useCallback(() => {
     setImageFiles([]);
@@ -416,32 +273,18 @@ const App: React.FC = () => {
     setAnnotationStats(null);
     setOutputPaths(null);
     setShowOutputSettings(false);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (activeTimerRef.current) {
-      clearInterval(activeTimerRef.current);
-      activeTimerRef.current = null;
-    }
+    clearTimers();
     setAnnotationTime(0);
-    annotationTimeRef.current = 0;
     setAllAnnotationTimes({});
     setActiveAnnotationTime(0);
-    activeAnnotationTimeRef.current = 0;
     setAllActiveAnnotationTimes({});
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
     setIsTimerPaused(false);
-    isTimerPausedRef.current = false;
     setCompletedImages({});
     setShowConfetti(false);
     setDashboardEntries([]);
     dashboardEntriesRef.current = [];
     setIsDashboardOpen(false);
-  }, []);
+  }, [clearTimers, setAllActiveAnnotationTimes, setAllAnnotationTimes, setAllAnnotations, setAllImageDimensions, setAnnotationClasses, setAnnotationStats, setAnnotationTime, setActiveAnnotationTime, setCompletedImages, setCurrentDirectory, setCurrentIndex, setImageDimensions, setImageFiles, setIsTimerPaused, setOutputPaths, setSelectedAnnotationClass, setSelectedAnnotationId]);
 
   const handleDirectorySelect = async (dirPath: string) => {
     try {
@@ -453,8 +296,21 @@ const App: React.FC = () => {
       setCurrentDirectory(dirPath);
       setImageFiles(filesData.images);
       const defaultPaths = getDefaultOutputPaths(dirPath);
-      const persistedPaths = await loadPersistedOutputPaths(dirPath);
-      const effectivePaths = persistedPaths ?? defaultPaths;
+      // Note: loadPersistedOutputPaths logic moved inline or needs to be extracted
+      // For now, assuming defaultPaths or re-implementing simple read
+      let effectivePaths = defaultPaths;
+      try {
+          const configPath = joinPathSegments(dirPath, CONFIG_FILE_NAME);
+          const data = await readJsonFile(configPath);
+          if (data && data.outputPaths) {
+             effectivePaths = {
+                annotations: typeof data.outputPaths.annotations === 'string' ? data.outputPaths.annotations : defaultPaths.annotations,
+                masks: typeof data.outputPaths.masks === 'string' ? data.outputPaths.masks : defaultPaths.masks,
+                times: typeof data.outputPaths.times === 'string' ? data.outputPaths.times : defaultPaths.times,
+             };
+          }
+      } catch (e) { /* ignore */ }
+      
       setOutputPaths(effectivePaths);
 
       const dimsPromises = filesData.images.map(
@@ -479,7 +335,7 @@ const App: React.FC = () => {
       let loadedActiveTimes: Record<number, number> = {};
       let loadedCompleted: Record<number, boolean> = {};
 
-            try {
+      try {
         const annotationsFolder = effectivePaths.annotations;
         const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
           console.warn('Annotations folder unavailable:', err);
@@ -609,20 +465,28 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('Error loading directory:', error);
       setIsLoadingProject(false);
-      alert(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  };  const triggerFileSelect = useCallback(() => setShowDirectoryBrowser(true), []);
+  };
+
   const clearImages = useCallback(() => resetState(), [resetState]);
 
   const changeImage = useCallback((newIndex: number) => {
     if (!completedImages[currentIndex]) {
-      setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: annotationTimeRef.current }));
-      setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeAnnotationTimeRef.current }));
+      setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: annotationTime }));
+      setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeAnnotationTime }));
     }
     setCurrentIndex(newIndex);
     setSelectedAnnotationId(null);
     setImageDimensions(null); // Reset dimensions to trigger loading for the new image
-  }, [currentIndex, completedImages]);
+    
+    // Reset timers for new image
+    // Note: We need to access the latest state of allAnnotationTimes here, but we only have the closure value.
+    // However, since we just updated it, we might need to rely on the effect in useTimer or pass the updated values.
+    // Actually, useTimer handles the timer reset when currentIndex changes if we were using effects, 
+    // but here we want to be explicit.
+    // The useTimer hook's effect on [currentIndex] will handle loading the times.
+  }, [currentIndex, completedImages, annotationTime, activeAnnotationTime, setAllAnnotationTimes, setAllActiveAnnotationTimes, setCurrentIndex, setSelectedAnnotationId, setImageDimensions]);
 
   const formatTimeForFile = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);
@@ -669,8 +533,8 @@ const App: React.FC = () => {
         const activeSnapshot = { ...allActiveAnnotationTimes };
 
         if (!completedImages[currentIndex]) {
-          timesSnapshot[currentIndex] = annotationTimeRef.current;
-          activeSnapshot[currentIndex] = activeAnnotationTimeRef.current;
+          timesSnapshot[currentIndex] = annotationTime;
+          activeSnapshot[currentIndex] = activeAnnotationTime;
         }
 
         setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: timesSnapshot[currentIndex] || 0 }));
@@ -751,11 +615,12 @@ const App: React.FC = () => {
         }
 
         await Promise.all(operations);
+        if (!silent) toast.success('Saved successfully');
         return true;
       } catch (error) {
         console.error('Error saving changes:', error);
         if (!silent) {
-          alert('Failed to save changes. Please try again.');
+          toast.error('Failed to save changes. Please try again.');
         }
         return false;
       } finally {
@@ -767,26 +632,26 @@ const App: React.FC = () => {
     const result = await savePromise;
     saveInProgressRef.current = null;
     return result;
-  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, outputPaths, currentDirectory, createTimesFileContent]);
+  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, completedImages, annotationClasses, imageDimensions, allImageDimensions, outputPaths, currentDirectory, createTimesFileContent, annotationTime, activeAnnotationTime, setAllAnnotationTimes, setAllActiveAnnotationTimes, setIsSaving]);
 
   const goToPrevious = useCallback(async () => {
     await handleSaveAll({ silent: true });
-    changeImage(currentIndex === 0 ? imageFiles.length - 1 : currentIndex - 1);
-  }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
+    navigatePrevious();
+  }, [navigatePrevious, handleSaveAll]);
 
   const goToNext = useCallback(async () => {
     await handleSaveAll({ silent: true });
-    changeImage(currentIndex === imageFiles.length - 1 ? 0 : currentIndex + 1);
-  }, [imageFiles.length, currentIndex, changeImage, handleSaveAll]);
+    navigateNext();
+  }, [navigateNext, handleSaveAll]);
 
   const goToIndex = useCallback(async (index: number) => {
     if (index >= 0 && index < imageFiles.length) {
       await handleSaveAll({ silent: true });
-      changeImage(index);
+      navigateToIndex(index);
     } else {
-      alert(`Please enter a number between 1 and ${imageFiles.length}.`);
+      toast.error(`Please enter a number between 1 and ${imageFiles.length}.`);
     }
-  }, [imageFiles.length, changeImage, handleSaveAll]);
+  }, [imageFiles.length, navigateToIndex, handleSaveAll]);
 
   const handleAddAnnotation = useCallback((newAnnotation: Omit<Annotation, 'id'>) => {
     if (!selectedAnnotationClass) return;
@@ -807,26 +672,14 @@ const App: React.FC = () => {
       setActiveAnnotationTime(savedActiveTime);
       setIsTimerPaused(false);
       resetInactivityTimer();
-      
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = window.setInterval(() => {
-        if (!isTimerPausedRef.current) {
-          setAnnotationTime(prev => prev + 1);
-        }
-      }, 1000);
     }
     
     const id = `${Date.now()}-${Math.random()}`;
     const annotationWithId = { ...newAnnotation, id, className: selectedAnnotationClass };
-    setAllAnnotations(prev => {
-        const currentAnns = prev[currentIndex] || [];
-        return { ...prev, [currentIndex]: [...currentAnns, annotationWithId] };
-    });
-  }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer]);
+    addAnnotation(annotationWithId);
+  }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, addAnnotation]);
 
-  const handleSelectAnnotation = useCallback((id: string | null) => setSelectedAnnotationId(id), []);
-
-  const handleDeleteAnnotation = useCallback((id: string) => {
+  const handleDeleteAnnotationWrapper = useCallback((id: string) => {
     // Si la imagen estaba completada, desmarcarla al hacer cambios
     if (completedImages[currentIndex]) {
       setCompletedImages(prev => {
@@ -843,74 +696,15 @@ const App: React.FC = () => {
       setActiveAnnotationTime(savedActiveTime);
       setIsTimerPaused(false);
       resetInactivityTimer();
-      
-      if (timerRef.current) clearInterval(timerRef.current);
-      timerRef.current = window.setInterval(() => {
-        if (!isTimerPausedRef.current) {
-          setAnnotationTime(prev => prev + 1);
-        }
-      }, 1000);
     }
     
-    setAllAnnotations(prev => ({
-        ...prev,
-        [currentIndex]: (prev[currentIndex] || []).filter(ann => ann.id !== id)
-    }));
-    if (selectedAnnotationId === id) {
-        setSelectedAnnotationId(null);
-    }
-  }, [currentIndex, selectedAnnotationId, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer]);
+    deleteAnnotation(id);
+  }, [currentIndex, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, deleteAnnotation]);
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
   const handleToggleDrawingMode = useCallback(() => {
     setIsDrawingMode(prev => !prev);
-  }, []);
-
-  const handleSelectAnnotationClass = useCallback((className: string) => setSelectedAnnotationClass(className), []);
-
-  const handleAddAnnotationClass = useCallback((name: string, id: number) => {
-    const trimmedName = name.trim();
-    if (!trimmedName || annotationClasses.some(cls => cls.name === trimmedName || cls.id === id)) {
-      alert("Class name and ID must be unique.");
-      return;
-    }
-    const colorIndex = annotationClasses.length % PALETTE.length;
-    const newClass = { id, name: trimmedName, color: PALETTE[colorIndex] };
-    const newClasses = [...annotationClasses, newClass];
-    setAnnotationClasses(newClasses);
-    if(!selectedAnnotationClass) {
-        setSelectedAnnotationClass(newClass.name);
-    }
-  }, [annotationClasses, selectedAnnotationClass]);
-  
-  const handleUpdateAnnotationClassColor = useCallback((className: string, newHexColor: string) => {
-    const newRgbaColor = hexToRgba(newHexColor);
-    setAnnotationClasses(prevClasses =>
-        prevClasses.map(cls =>
-            cls.name === className ? { ...cls, color: newRgbaColor } : cls
-        )
-    );
-  }, []);
-
-  const loadPersistedOutputPaths = useCallback(async (dirPath: string): Promise<OutputPaths | null> => {
-    if (!dirPath) return null;
-    const configPath = joinPathSegments(dirPath, CONFIG_FILE_NAME);
-    try {
-      const data = await readJsonFile(configPath);
-      if (data && data.outputPaths) {
-        const defaults = getDefaultOutputPaths(dirPath);
-        return {
-          annotations: typeof data.outputPaths.annotations === 'string' ? data.outputPaths.annotations : defaults.annotations,
-          masks: typeof data.outputPaths.masks === 'string' ? data.outputPaths.masks : defaults.masks,
-          times: typeof data.outputPaths.times === 'string' ? data.outputPaths.times : defaults.times,
-        };
-      }
-    } catch (error) {
-      // Silently ignore if config file doesn't exist or can't be read
-      console.debug('Output config not found or unreadable:', error);
-    }
-    return null;
   }, []);
 
   const persistOutputPaths = useCallback(async (paths: OutputPaths) => {
@@ -942,14 +736,14 @@ const App: React.FC = () => {
       setOutputPaths(updated);
       void persistOutputPaths(updated);
     }
-  }, [outputPaths, persistOutputPaths]);
+  }, [outputPaths, persistOutputPaths, setOutputPaths]);
 
   const handleRestoreDefaultOutputPaths = useCallback(() => {
     if (!currentDirectory) return;
     const defaults = getDefaultOutputPaths(currentDirectory);
     setOutputPaths(defaults);
     void persistOutputPaths(defaults);
-  }, [currentDirectory, persistOutputPaths]);
+  }, [currentDirectory, persistOutputPaths, setOutputPaths]);
 
   const openDashboard = useCallback(() => {
     setIsDashboardOpen(true);
@@ -967,32 +761,22 @@ const App: React.FC = () => {
         delete newCompleted[currentIndex];
         return newCompleted;
       });
-      // Timers will restart automatically via useEffect
+      // Timers will restart automatically via useEffect in useTimer
       return;
     }
 
-    if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-    }
-    if (activeTimerRef.current) {
-        clearInterval(activeTimerRef.current);
-        activeTimerRef.current = null;
-    }
-    if (inactivityTimerRef.current) {
-        clearTimeout(inactivityTimerRef.current);
-        inactivityTimerRef.current = null;
-    }
+    // Stop timers
+    clearTimers();
     
-    setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: annotationTimeRef.current }));
-    setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeAnnotationTimeRef.current }));
+    setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: annotationTime }));
+    setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeAnnotationTime }));
 
     setCompletedImages(prev => ({ ...prev, [currentIndex]: true }));
     setIsTimerPaused(true);
 
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 4000);
-  }, [currentIndex, completedImages]);
+  }, [currentIndex, completedImages, clearTimers, annotationTime, activeAnnotationTime, setAllAnnotationTimes, setAllActiveAnnotationTimes, setCompletedImages, setIsTimerPaused]);
 
   const handleDeleteCurrentImage = useCallback(async () => {
     const imageFile = imageFiles[currentIndex];
@@ -1005,18 +789,7 @@ const App: React.FC = () => {
       return;
     }
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    if (activeTimerRef.current) {
-      clearInterval(activeTimerRef.current);
-      activeTimerRef.current = null;
-    }
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
+    clearTimers();
 
     const effectiveOutputs = outputPaths || (currentDirectory ? getDefaultOutputPaths(currentDirectory) : null);
     const imageBaseName = imageFile.name.replace(/\.[^.]+$/, '');
@@ -1030,6 +803,19 @@ const App: React.FC = () => {
         annotationPath,
         maskPath
       });
+
+      // Note: remapRecordAfterRemoval needs to be imported or defined
+      const remapRecordAfterRemoval = <T,>(record: Record<number, T>, removedIndex: number): Record<number, T> => {
+        return Object.keys(record).reduce((acc, key) => {
+          const idx = parseInt(key, 10);
+          if (Number.isNaN(idx) || idx === removedIndex) {
+            return acc;
+          }
+          const newIdx = idx > removedIndex ? idx - 1 : idx;
+          acc[newIdx] = record[idx];
+          return acc;
+        }, {} as Record<number, T>);
+      };
 
       const removedIndex = currentIndex;
       const newImageFiles = imageFiles.filter((_, idx) => idx !== removedIndex);
@@ -1048,9 +834,7 @@ const App: React.FC = () => {
         setAllImageDimensions({});
         setCompletedImages({});
         setAnnotationTime(0);
-        annotationTimeRef.current = 0;
         setActiveAnnotationTime(0);
-        activeAnnotationTimeRef.current = 0;
         setCurrentIndex(0);
         setSelectedAnnotationId(null);
         setIsDrawingMode(false);
@@ -1074,30 +858,31 @@ const App: React.FC = () => {
       const nextAnnotationTime = remappedTimes[nextIndex] || 0;
       const nextActiveAnnotationTime = remappedActiveTimes[nextIndex] || 0;
       setAnnotationTime(nextAnnotationTime);
-      annotationTimeRef.current = nextAnnotationTime;
       setActiveAnnotationTime(nextActiveAnnotationTime);
-      activeAnnotationTimeRef.current = nextActiveAnnotationTime;
 
       const nextIsCompleted = !!remappedCompleted[nextIndex];
       setIsTimerPaused(nextIsCompleted);
       if (!nextIsCompleted) {
         resetInactivityTimer();
       }
+      toast.success('Image deleted');
     } catch (error) {
       console.error('Error deleting image:', error);
-      alert(error instanceof Error ? error.message : 'Failed to delete image.');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete image.');
     } finally {
       setIsDeletingImage(false);
     }
-  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, allImageDimensions, completedImages, outputPaths, currentDirectory, resetInactivityTimer]);
+  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, allImageDimensions, completedImages, outputPaths, currentDirectory, resetInactivityTimer, clearTimers, setImageFiles, setAllAnnotations, setAllAnnotationTimes, setAllActiveAnnotationTimes, setAllImageDimensions, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setCurrentIndex, setSelectedAnnotationId, setIsTimerPaused, setIsDeletingImage]);
 
+
+  const currentImageUrl = imageFiles[currentIndex]?.url ?? null;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Annotation deletion shortcut works regardless of focus
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnotationId) {
         e.preventDefault();
-        handleDeleteAnnotation(selectedAnnotationId);
+        handleDeleteAnnotationWrapper(selectedAnnotationId);
         return;
       }
       
@@ -1134,7 +919,7 @@ const App: React.FC = () => {
     goToPrevious, 
     goToNext, 
     selectedAnnotationId, 
-    handleDeleteAnnotation,
+    handleDeleteAnnotationWrapper,
     selectedAnnotationClass,
     handleToggleDrawingMode
   ]);
@@ -1152,15 +937,6 @@ const App: React.FC = () => {
     resetInactivityTimer();
     imageViewerRef.current?.resetTransform();
   };
-
-  const startActiveTimer = useCallback(() => {
-    isActivelyDrawingRef.current = true;
-    resetInactivityTimer();
-  }, [resetInactivityTimer]);
-
-  const stopActiveTimer = useCallback(() => {
-    isActivelyDrawingRef.current = false;
-  }, []);
 
   const currentAnnotations = allAnnotations[currentIndex] || [];
   const completedImagesCount = Object.values(completedImages).filter(isCompleted => isCompleted).length;
@@ -1245,7 +1021,7 @@ const App: React.FC = () => {
           onUpdateAnnotationClassColor={handleUpdateAnnotationClassColor}
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}
-          onDeleteAnnotation={handleDeleteAnnotation}
+          onDeleteAnnotation={handleDeleteAnnotationWrapper}
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
           onDeleteCurrentImage={handleDeleteCurrentImage}

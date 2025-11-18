@@ -6,6 +6,10 @@ const cors = require('cors');
 const app = express();
 const PORT = 3001;
 
+// Security Constants
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+const ALLOWED_TEXT_EXTENSIONS = ['.txt', '.md', '.csv', '.log'];
+
 // Configurar CORS para permitir peticiones desde el frontend
 app.use(cors({
   origin: 'http://localhost:3000',
@@ -207,6 +211,11 @@ app.post('/api/save-json', (req, res) => {
       return res.status(400).json({ error: 'Path and data are required' });
     }
 
+    // Security Check
+    if (path.extname(filePath).toLowerCase() !== '.json') {
+      return res.status(400).json({ error: 'Invalid file extension. Only .json allowed.' });
+    }
+
     const jsonString = JSON.stringify(data, null, 2);
     const dirName = path.dirname(filePath);
     fs.mkdirSync(dirName, { recursive: true });
@@ -230,6 +239,12 @@ app.post('/api/save-image', (req, res) => {
     
     if (!filePath || !base64) {
       return res.status(400).json({ error: 'Path and base64 data are required' });
+    }
+
+    // Security Check
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      return res.status(400).json({ error: 'Invalid file extension. Only images allowed.' });
     }
 
     // Extraer datos base64 (remover prefijo data:image/png;base64,)
@@ -284,6 +299,12 @@ app.post('/api/save-text', (req, res) => {
       return res.status(400).json({ error: 'Path and content are required' });
     }
 
+    // Security Check
+    const ext = path.extname(filePath).toLowerCase();
+    if (!ALLOWED_TEXT_EXTENSIONS.includes(ext)) {
+      return res.status(400).json({ error: 'Invalid file extension. Only text files allowed.' });
+    }
+
     const dirName = path.dirname(filePath);
     fs.mkdirSync(dirName, { recursive: true });
     fs.writeFileSync(filePath, content, 'utf-8');
@@ -306,6 +327,12 @@ app.post('/api/delete-image', (req, res) => {
 
     if (!imagePath) {
       return res.status(400).json({ error: 'imagePath is required' });
+    }
+
+    // Security Check
+    const ext = path.extname(imagePath).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
+      return res.status(400).json({ error: 'Invalid file type. Can only delete images.' });
     }
 
     if (!fs.existsSync(imagePath) || !fs.statSync(imagePath).isFile()) {

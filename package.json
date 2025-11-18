@@ -15,7 +15,8 @@
     "cors": "^2.8.5",
     "express": "^4.18.2",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
