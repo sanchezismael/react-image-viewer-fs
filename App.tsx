@@ -219,6 +219,90 @@ const App: React.FC = () => {
     void hydrateDashboardEntries(outputPaths.times);
   }, [outputPaths?.times, hydrateDashboardEntries]);
 
+  // Lazy load dimensions for current image
+  useEffect(() => {
+    if (!imageFiles[currentIndex]) return;
+    
+    // If we already have dimensions for this index, use them
+    if (allImageDimensions[currentIndex]) {
+      if (!imageDimensions || imageDimensions.width !== allImageDimensions[currentIndex].width) {
+        setImageDimensions(allImageDimensions[currentIndex]);
+      }
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      const dims = { width: img.naturalWidth, height: img.naturalHeight };
+      setImageDimensions(dims);
+      setAllImageDimensions(prev => ({ ...prev, [currentIndex]: dims }));
+    };
+    img.onerror = () => {
+      console.error(`Failed to load image dimensions for ${imageFiles[currentIndex].name}`);
+      const dims = { width: 0, height: 0 };
+      setImageDimensions(dims);
+      setAllImageDimensions(prev => ({ ...prev, [currentIndex]: dims }));
+    };
+    img.src = imageFiles[currentIndex].url;
+  }, [currentIndex, imageFiles, allImageDimensions, imageDimensions, setImageDimensions, setAllImageDimensions]);
+
+  // Lazy load annotations for current image
+  useEffect(() => {
+    const loadAnnotations = async () => {
+      if (!imageFiles[currentIndex] || !outputPaths?.annotations) return;
+      
+      // If we already have annotations for this index (even empty array), don't reload
+      if (allAnnotations[currentIndex] !== undefined) return;
+
+      const imageBaseName = imageFiles[currentIndex].name.replace(/\.[^.]+$/, '');
+      const jsonPath = joinPathSegments(outputPaths.annotations, `${imageBaseName}.json`);
+      
+      try {
+        const data = await readJsonFile(jsonPath);
+        if (data && data.annotations && Array.isArray(data.annotations)) {
+          const loadedAnns = data.annotations.map((ann: any) => ({
+            id: `${Date.now()}-${Math.random()}`,
+            points: ann.points,
+            className: ann.className,
+          }));
+          
+          setAllAnnotations(prev => ({ ...prev, [currentIndex]: loadedAnns }));
+          
+          // Update classes if new ones found
+          const newClasses = new Set(annotationClasses.map(c => c.name));
+          let updatedClasses = [...annotationClasses];
+          let changed = false;
+          
+          loadedAnns.forEach((ann: any) => {
+            if (!newClasses.has(ann.className)) {
+              newClasses.add(ann.className);
+              updatedClasses.push({
+                id: ann.classId || Date.now(),
+                name: ann.className,
+                color: PALETTE[updatedClasses.length % PALETTE.length]
+              });
+              changed = true;
+            }
+          });
+          
+          if (changed) {
+            setAnnotationClasses(updatedClasses);
+            if (!selectedAnnotationClass && updatedClasses.length > 0) {
+              setSelectedAnnotationClass(updatedClasses[0].name);
+            }
+          }
+        } else {
+          setAllAnnotations(prev => ({ ...prev, [currentIndex]: [] }));
+        }
+      } catch (e) {
+        // File likely doesn't exist, set empty
+        setAllAnnotations(prev => ({ ...prev, [currentIndex]: [] }));
+      }
+    };
+    
+    loadAnnotations();
+  }, [currentIndex, imageFiles, outputPaths, allAnnotations, setAllAnnotations, annotationClasses, setAnnotationClasses, selectedAnnotationClass, setSelectedAnnotationClass]);
+
   // Effect to calculate annotation statistics
   useEffect(() => {
     if (Object.keys(allAnnotations).length === 0 || Object.keys(allImageDimensions).length === 0) {
@@ -313,102 +397,24 @@ const App: React.FC = () => {
       
       setOutputPaths(effectivePaths);
 
-      const dimsPromises = filesData.images.map(
-        (image) =>
-          new Promise<{ width: number; height: number }>((resolve) => {
-            const preload = new Image();
-            preload.onload = () => resolve({ width: preload.naturalWidth, height: preload.naturalHeight });
-            preload.onerror = () => resolve({ width: 0, height: 0 });
-            preload.src = image.url;
-          })
-      );
-
-      /* Lazy loading optimization: Do NOT load all dimensions at once.
-      const dims = await Promise.all(dimsPromises);
-      const dimsRecord = dims.reduce((acc, dim, index) => {
-        acc[index] = dim;
-        return acc;
-      }, {} as Record<number, { width: number; height: number }>);
-      setAllImageDimensions(dimsRecord);
-      */
+      // Note: Dimensions and Annotations are now lazy-loaded via useEffect hooks.
+      // We only initialize empty states here.
+      
+      setAllImageDimensions({});
+      setAllAnnotations({});
 
       let newAllAnnotations: Record<number, Annotation[]> = {};
       let loadedTimes: Record<number, number> = {};
       let loadedActiveTimes: Record<number, number> = {};
       let loadedCompleted: Record<number, boolean> = {};
 
+      // Pre-fetch list of existing annotation files for completion status
+      let existingJsonFiles = new Set<string>();
       try {
-        const annotationsFolder = effectivePaths.annotations;
-        /* Lazy loading optimization: Do NOT load all JSONs at once.
-           We will load them on demand in useEffect when currentIndex changes.
-           
-        const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
-          console.warn('Annotations folder unavailable:', err);
-          return { images: [], jsonFiles: [] };
-        });
-
-        if (annotationsFolderData.jsonFiles.length > 0) {
-          const jsonDataPromises = annotationsFolderData.jsonFiles.map((jsonFile) =>
-            readJsonFile(jsonFile.path).catch((err) => {
-              console.error(`Error loading ${jsonFile.name}:`, err);
-              return null;
-            })
-          );
-
-          const jsonContents = await Promise.all(jsonDataPromises);
-
-          const jsonAnnotationsMap = new Map<string, any[]>();
-          jsonContents.forEach((data, index) => {
-            if (data && data.annotations && Array.isArray(data.annotations)) {
-              const baseName = annotationsFolderData.jsonFiles[index].name.split('.').slice(0, -1).join('.');
-              jsonAnnotationsMap.set(baseName, data.annotations);
-            }
-          });
-
-          const loadedClasses = new Map<string, { id: number }>();
-
-          filesData.images.forEach((imageFile, index) => {
-            const imageBaseName = imageFile.name.split('.').slice(0, -1).join('.');
-            const annotationsData = jsonAnnotationsMap.get(imageBaseName);
-
-            if (annotationsData) {
-              newAllAnnotations[index] = annotationsData.map((ann: any) => {
-                if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
-                  loadedClasses.set(ann.className, { id: ann.classId });
-                }
-                return {
-                  id: `${Date.now()}-${Math.random()}`,
-                  points: ann.points,
-                  className: ann.className,
-                };
-              });
-            }
-          });
-
-          const finalClasses: AnnotationClass[] = [];
-          let colorIndex = 0;
-          for (const [name, data] of loadedClasses.entries()) {
-            finalClasses.push({
-              name,
-              id: data.id,
-              color: PALETTE[colorIndex % PALETTE.length],
-            });
-            colorIndex++;
-          }
-
-          finalClasses.sort((a, b) => a.id - b.id);
-
-          setAnnotationClasses(finalClasses);
-          setAllAnnotations(newAllAnnotations);
-
-          if (finalClasses.length > 0) {
-            setSelectedAnnotationClass(finalClasses[0].name);
-          }
-        }
-        */
-      } catch (error) {
-        console.error('Error loading annotations:', error);
-      }
+          const annotationsFolder = effectivePaths.annotations;
+          const annotationsFolderData = await getFiles(annotationsFolder).catch(() => ({ images: [], jsonFiles: [] }));
+          annotationsFolderData.jsonFiles.forEach(f => existingJsonFiles.add(f.name));
+      } catch (e) { /* ignore */ }
 
       try {
         const timesFilePath = joinPathSegments(effectivePaths.times, 'annotation_times.txt');
@@ -444,7 +450,8 @@ const App: React.FC = () => {
               }
 
               if (loadedTimes[index] > 0) {
-                if (newAllAnnotations[index] && newAllAnnotations[index].length > 0) {
+                const imageBaseName = imageName.replace(/\.[^.]+$/, '');
+                if (existingJsonFiles.has(`${imageBaseName}.json`)) {
                   loadedCompleted[index] = true;
                 }
               }
@@ -658,6 +665,15 @@ const App: React.FC = () => {
       toast.error(`Please enter a number between 1 and ${imageFiles.length}.`);
     }
   }, [imageFiles.length, navigateToIndex, handleSaveAll]);
+
+  const handleAddAnnotationClassWrapper = useCallback((name: string, id: number) => {
+    const newClass: AnnotationClass = {
+      id,
+      name,
+      color: PALETTE[annotationClasses.length % PALETTE.length]
+    };
+    handleAddAnnotationClass(newClass);
+  }, [annotationClasses.length, handleAddAnnotationClass]);
 
   const handleAddAnnotation = useCallback((newAnnotation: Omit<Annotation, 'id'>) => {
     if (!selectedAnnotationClass) return;
@@ -1023,7 +1039,7 @@ const App: React.FC = () => {
           onZoomOut={handleZoomOut}
           onReset={handleResetTransform}
           onToggleDrawingMode={handleToggleDrawingMode}
-          onAddAnnotationClass={handleAddAnnotationClass}
+          onAddAnnotationClass={handleAddAnnotationClassWrapper}
           onUpdateAnnotationClassColor={handleUpdateAnnotationClassColor}
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}

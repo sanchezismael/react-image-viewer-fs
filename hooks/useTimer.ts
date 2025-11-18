@@ -55,6 +55,12 @@ export const useTimer = (currentIndex: number, isCompleted: boolean): TimerState
     isTimerPausedRef.current = isTimerPaused;
   }, [isTimerPaused]);
 
+  // Update local state when currentIndex changes (and thus the times for that index change)
+  useEffect(() => {
+    setAnnotationTime(allAnnotationTimes[currentIndex] || 0);
+    setActiveAnnotationTime(allActiveAnnotationTimes[currentIndex] || 0);
+  }, [currentIndex, allAnnotationTimes, allActiveAnnotationTimes]);
+
   // Calculate totals
   useEffect(() => {
     const totalTime = Object.values(allAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
