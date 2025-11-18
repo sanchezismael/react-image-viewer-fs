@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
+import DashboardModal from './components/DashboardModal';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import Confetti from './components/Confetti';
 import RocketLaunchAnimation from './components/RocketLaunchAnimation';
 import { TransformState } from './hooks/useImageTransform';
-import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, ImageFile } from './utils/api';
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, ImageFile, deleteImageAssets } from './utils/api';
+import { DashboardEntry } from './types/dashboard';
 
 export interface AnnotationClass {
   id: number;
@@ -28,6 +30,8 @@ type OutputPaths = {
 };
 
 const CONFIG_FILE_NAME = '.viewer-config.json';
+const DASHBOARD_STATS_FILE = 'annotation_dashboard.json';
+const MAX_DASHBOARD_ENTRIES = 1000;
 
 const PALETTE = [
   'rgba(239, 68, 68, 0.5)',   // red
@@ -62,6 +66,18 @@ const joinPathSegments = (base: string, child: string) => {
   return `${sanitizedBase}${separator}${sanitizedChild}`;
 };
 
+const remapRecordAfterRemoval = <T,>(record: Record<number, T>, removedIndex: number): Record<number, T> => {
+  return Object.keys(record).reduce((acc, key) => {
+    const idx = parseInt(key, 10);
+    if (Number.isNaN(idx) || idx === removedIndex) {
+      return acc;
+    }
+    const newIdx = idx > removedIndex ? idx - 1 : idx;
+    acc[newIdx] = record[idx];
+    return acc;
+  }, {} as Record<number, T>);
+};
+
 const getDefaultOutputPaths = (baseDir: string): OutputPaths => {
   if (!baseDir) {
     return { annotations: '', masks: '', times: '' };
@@ -73,6 +89,59 @@ const getDefaultOutputPaths = (baseDir: string): OutputPaths => {
     masks: `${cleanBase}${separator}masks`,
     times: `${cleanBase}${separator}times`
   };
+};
+
+const polygonArea = (points: Point[]) => {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  return Math.abs(area / 2);
+};
+
+const appendDashboardEntry = (entries: DashboardEntry[], entry: DashboardEntry) => {
+  const updated = [...entries, entry];
+  if (updated.length > MAX_DASHBOARD_ENTRIES) {
+    updated.shift();
+  }
+  return updated;
+};
+
+const buildHistoricalDashboardEntries = (
+  files: ImageFile[],
+  annotations: Record<number, Annotation[]>,
+  totalTimes: Record<number, number>,
+  activeTimes: Record<number, number>
+): DashboardEntry[] => {
+  const entries: DashboardEntry[] = [];
+  files.forEach((file, index) => {
+    const imageAnnotations = annotations[index] || [];
+    const totalTime = totalTimes[index] || 0;
+    const activeTime = activeTimes[index] || 0;
+    if (imageAnnotations.length === 0 && totalTime === 0 && activeTime === 0) {
+      return;
+    }
+    const totalPixels = imageAnnotations.reduce((sum, ann) => {
+      if (ann.points.length < 3) {
+        return sum;
+      }
+      return sum + polygonArea(ann.points);
+    }, 0);
+
+    entries.push({
+      id: `${file.path}-${index}`,
+      imageName: file.name,
+      imagePath: file.path,
+      timestamp: file.modifiedAt || new Date().toISOString(),
+      annotationCount: imageAnnotations.length,
+      totalPixelsAnnotated: totalPixels,
+      totalTimeSeconds: totalTime,
+      activeTimeSeconds: activeTime,
+    });
+  });
+  return entries;
 };
 
 const App: React.FC = () => {
@@ -116,6 +185,22 @@ const App: React.FC = () => {
 
   const [totalProjectTime, setTotalProjectTime] = useState(0);
   const [totalActiveProjectTime, setTotalActiveProjectTime] = useState(0);
+  const [isDeletingImage, setIsDeletingImage] = useState(false);
+  const [dashboardEntries, setDashboardEntries] = useState<DashboardEntry[]>([]);
+  const dashboardEntriesRef = useRef<DashboardEntry[]>([]);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const liveDashboardEntries = React.useMemo(() => {
+    if (imageFiles.length === 0) {
+      return [] as DashboardEntry[];
+    }
+    const timesSnapshot = { ...allAnnotationTimes };
+    const activeSnapshot = { ...allActiveAnnotationTimes };
+    if (!completedImages[currentIndex]) {
+      timesSnapshot[currentIndex] = annotationTimeRef.current;
+      activeSnapshot[currentIndex] = activeAnnotationTimeRef.current;
+    }
+    return buildHistoricalDashboardEntries(imageFiles, allAnnotations, timesSnapshot, activeSnapshot);
+  }, [imageFiles, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, currentIndex, completedImages, annotationTime, activeAnnotationTime]);
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
@@ -131,7 +216,48 @@ const App: React.FC = () => {
   useEffect(() => {
     isTimerPausedRef.current = isTimerPaused;
   }, [isTimerPaused]);
+  useEffect(() => {
+    dashboardEntriesRef.current = dashboardEntries;
+  }, [dashboardEntries]);
 
+  const hydrateDashboardEntries = useCallback(async (timesPath?: string, fallbackEntries?: DashboardEntry[]) => {
+    if (!timesPath) {
+      const entries = fallbackEntries || [];
+      setDashboardEntries(entries);
+      dashboardEntriesRef.current = entries;
+      return;
+    }
+
+    const statsPath = joinPathSegments(timesPath, DASHBOARD_STATS_FILE);
+    try {
+      const data = await readJsonFile(statsPath);
+      if (Array.isArray(data)) {
+        setDashboardEntries(data as DashboardEntry[]);
+        dashboardEntriesRef.current = data as DashboardEntry[];
+        return;
+      }
+    } catch (error) {
+      console.debug('Dashboard stats not found, attempting to bootstrap with existing data.', error);
+    }
+
+    const entries = fallbackEntries || [];
+    setDashboardEntries(entries);
+    dashboardEntriesRef.current = entries;
+    if (timesPath && entries.length > 0) {
+      try {
+        await saveJsonFile(statsPath, entries);
+      } catch (error) {
+        console.error('Error creating dashboard stats file:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!outputPaths?.times) {
+      return;
+    }
+    void hydrateDashboardEntries(outputPaths.times);
+  }, [outputPaths?.times, hydrateDashboardEntries]);
   // Effect to calculate total project times
   useEffect(() => {
     const totalTime = Object.values(allAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
@@ -312,6 +438,9 @@ const App: React.FC = () => {
     isTimerPausedRef.current = false;
     setCompletedImages({});
     setShowConfetti(false);
+    setDashboardEntries([]);
+    dashboardEntriesRef.current = [];
+    setIsDashboardOpen(false);
   }, []);
 
   const handleDirectorySelect = async (dirPath: string) => {
@@ -324,8 +453,9 @@ const App: React.FC = () => {
       setCurrentDirectory(dirPath);
       setImageFiles(filesData.images);
       const defaultPaths = getDefaultOutputPaths(dirPath);
-      setOutputPaths(defaultPaths);
-      const persistedPathsPromise = loadPersistedOutputPaths(dirPath);
+      const persistedPaths = await loadPersistedOutputPaths(dirPath);
+      const effectivePaths = persistedPaths ?? defaultPaths;
+      setOutputPaths(effectivePaths);
 
       const dimsPromises = filesData.images.map(
         (image) =>
@@ -345,9 +475,12 @@ const App: React.FC = () => {
       setAllImageDimensions(dimsRecord);
 
       let newAllAnnotations: Record<number, Annotation[]> = {};
+      let loadedTimes: Record<number, number> = {};
+      let loadedActiveTimes: Record<number, number> = {};
+      let loadedCompleted: Record<number, boolean> = {};
 
-      try {
-        const annotationsFolder = defaultPaths.annotations;
+            try {
+        const annotationsFolder = effectivePaths.annotations;
         const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
           console.warn('Annotations folder unavailable:', err);
           return { images: [], jsonFiles: [] };
@@ -416,15 +549,11 @@ const App: React.FC = () => {
       }
 
       try {
-        const timesFilePath = joinPathSegments(defaultPaths.times, 'annotation_times.txt');
+        const timesFilePath = joinPathSegments(effectivePaths.times, 'annotation_times.txt');
 
         const timesContent = await readTextFile(timesFilePath).catch(() => null);
 
         if (timesContent) {
-          const loadedTimes: Record<number, number> = {};
-          const loadedActiveTimes: Record<number, number> = {};
-          const loadedCompleted: Record<number, boolean> = {};
-
           const lines = timesContent.split('\n');
 
           filesData.images.forEach((imageFile, index) => {
@@ -468,10 +597,13 @@ const App: React.FC = () => {
         console.error('Error loading times:', error);
       }
 
-      const persistedPaths = await persistedPathsPromise;
-      if (persistedPaths) {
-        setOutputPaths(persistedPaths);
-      }
+      const historicalEntries = buildHistoricalDashboardEntries(
+        filesData.images,
+        newAllAnnotations,
+        loadedTimes,
+        loadedActiveTimes
+      );
+      await hydrateDashboardEntries(effectivePaths.times, historicalEntries.length ? historicalEntries : undefined);
 
       setIsLoadingProject(false);
     } catch (error) {
@@ -546,6 +678,28 @@ const App: React.FC = () => {
 
         const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
         const operations: Promise<void>[] = [];
+
+        let updatedDashboardEntries: DashboardEntry[] | null = null;
+        if (!silent && effectiveOutputs.times) {
+          const totalPixelsAnnotated = currentAnns.reduce((sum, ann) => sum + (
+            ann.points.length >= 3 ? polygonArea(ann.points) : 0
+          ), 0);
+          const entry: DashboardEntry = {
+            id: `${Date.now()}-${Math.random()}`,
+            imageName,
+            imagePath: imageFiles[currentIndex].path,
+            timestamp: new Date().toISOString(),
+            annotationCount: currentAnns.length,
+            totalPixelsAnnotated,
+            totalTimeSeconds: timesSnapshot[currentIndex] || 0,
+            activeTimeSeconds: activeSnapshot[currentIndex] || 0,
+          };
+          updatedDashboardEntries = appendDashboardEntry(dashboardEntriesRef.current, entry);
+          dashboardEntriesRef.current = updatedDashboardEntries;
+          setDashboardEntries(updatedDashboardEntries);
+          const statsFilePath = joinPathSegments(effectiveOutputs.times, DASHBOARD_STATS_FILE);
+          operations.push(saveJsonFile(statsFilePath, updatedDashboardEntries));
+        }
 
         if (jsonPath) {
           const exportData = {
@@ -797,6 +951,14 @@ const App: React.FC = () => {
     void persistOutputPaths(defaults);
   }, [currentDirectory, persistOutputPaths]);
 
+  const openDashboard = useCallback(() => {
+    setIsDashboardOpen(true);
+  }, []);
+
+  const closeDashboard = useCallback(() => {
+    setIsDashboardOpen(false);
+  }, []);
+
   const handleMarkAsComplete = useCallback(() => {
     // Toggle: if already completed, unmark it
     if (completedImages[currentIndex]) {
@@ -831,6 +993,103 @@ const App: React.FC = () => {
     setShowConfetti(true);
     setTimeout(() => setShowConfetti(false), 4000);
   }, [currentIndex, completedImages]);
+
+  const handleDeleteCurrentImage = useCallback(async () => {
+    const imageFile = imageFiles[currentIndex];
+    if (!imageFile) {
+      return;
+    }
+
+    const confirmDelete = window.confirm('Delete this image along with its annotation JSON and mask file? This action cannot be undone.');
+    if (!confirmDelete) {
+      return;
+    }
+
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (activeTimerRef.current) {
+      clearInterval(activeTimerRef.current);
+      activeTimerRef.current = null;
+    }
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current);
+      inactivityTimerRef.current = null;
+    }
+
+    const effectiveOutputs = outputPaths || (currentDirectory ? getDefaultOutputPaths(currentDirectory) : null);
+    const imageBaseName = imageFile.name.replace(/\.[^.]+$/, '');
+    const annotationPath = effectiveOutputs ? joinPathSegments(effectiveOutputs.annotations, `${imageBaseName}.json`) : undefined;
+    const maskPath = effectiveOutputs ? joinPathSegments(effectiveOutputs.masks, `${imageBaseName}_mask.png`) : undefined;
+
+    setIsDeletingImage(true);
+    try {
+      await deleteImageAssets({
+        imagePath: imageFile.path,
+        annotationPath,
+        maskPath
+      });
+
+      const removedIndex = currentIndex;
+      const newImageFiles = imageFiles.filter((_, idx) => idx !== removedIndex);
+
+      const remappedAnnotations = remapRecordAfterRemoval(allAnnotations, removedIndex);
+      const remappedTimes = remapRecordAfterRemoval(allAnnotationTimes, removedIndex);
+      const remappedActiveTimes = remapRecordAfterRemoval(allActiveAnnotationTimes, removedIndex);
+      const remappedDimensions = remapRecordAfterRemoval(allImageDimensions, removedIndex);
+      const remappedCompleted = remapRecordAfterRemoval(completedImages, removedIndex);
+
+      if (newImageFiles.length === 0) {
+        setImageFiles([]);
+        setAllAnnotations({});
+        setAllAnnotationTimes({});
+        setAllActiveAnnotationTimes({});
+        setAllImageDimensions({});
+        setCompletedImages({});
+        setAnnotationTime(0);
+        annotationTimeRef.current = 0;
+        setActiveAnnotationTime(0);
+        activeAnnotationTimeRef.current = 0;
+        setCurrentIndex(0);
+        setSelectedAnnotationId(null);
+        setIsDrawingMode(false);
+        setIsTimerPaused(false);
+        setShowConfetti(false);
+        return;
+      }
+
+      const nextIndex = Math.min(removedIndex, newImageFiles.length - 1);
+      setImageFiles(newImageFiles);
+      setAllAnnotations(remappedAnnotations);
+      setAllAnnotationTimes(remappedTimes);
+      setAllActiveAnnotationTimes(remappedActiveTimes);
+      setAllImageDimensions(remappedDimensions);
+      setCompletedImages(remappedCompleted);
+      setSelectedAnnotationId(null);
+      setIsDrawingMode(false);
+      setShowConfetti(false);
+      setCurrentIndex(nextIndex);
+
+      const nextAnnotationTime = remappedTimes[nextIndex] || 0;
+      const nextActiveAnnotationTime = remappedActiveTimes[nextIndex] || 0;
+      setAnnotationTime(nextAnnotationTime);
+      annotationTimeRef.current = nextAnnotationTime;
+      setActiveAnnotationTime(nextActiveAnnotationTime);
+      activeAnnotationTimeRef.current = nextActiveAnnotationTime;
+
+      const nextIsCompleted = !!remappedCompleted[nextIndex];
+      setIsTimerPaused(nextIsCompleted);
+      if (!nextIsCompleted) {
+        resetInactivityTimer();
+      }
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      alert(error instanceof Error ? error.message : 'Failed to delete image.');
+    } finally {
+      setIsDeletingImage(false);
+    }
+  }, [imageFiles, currentIndex, allAnnotations, allAnnotationTimes, allActiveAnnotationTimes, allImageDimensions, completedImages, outputPaths, currentDirectory, resetInactivityTimer]);
 
 
   useEffect(() => {
@@ -941,6 +1200,15 @@ const App: React.FC = () => {
         />
       )}
 
+      {isDashboardOpen && (
+        <DashboardModal
+          entries={dashboardEntries}
+          liveEntries={liveDashboardEntries}
+          totalImages={imageFiles.length}
+          onClose={closeDashboard}
+        />
+      )}
+
       {hasImages && (
         <Toolbar
           images={imageFiles}
@@ -980,7 +1248,10 @@ const App: React.FC = () => {
           onDeleteAnnotation={handleDeleteAnnotation}
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
+          onDeleteCurrentImage={handleDeleteCurrentImage}
+          onOpenDashboard={openDashboard}
           isSaving={isSaving}
+          isDeletingImage={isDeletingImage}
           onToggleOutputSettings={handleToggleOutputSettings}
           onRequestOutputPathChange={handleRequestOutputPathChange}
           onRestoreDefaultOutputPaths={handleRestoreDefaultOutputPaths}

@@ -92,12 +92,14 @@ app.get('/api/files', (req, res) => {
       if (item.isFile()) {
         const ext = path.extname(item.name).toLowerCase();
         const fullPath = path.join(dirPath, item.name);
+        const fileStats = fs.statSync(fullPath);
         
         if (imageExtensions.includes(ext) && !item.name.endsWith('_mask.png')) {
           images.push({
             name: item.name,
             path: fullPath,
-            url: `/api/image?path=${encodeURIComponent(fullPath)}`
+            url: `/api/image?path=${encodeURIComponent(fullPath)}`,
+            modifiedAt: fileStats.mtime.toISOString()
           });
         } else if (ext === '.json') {
           jsonFiles.push({
@@ -290,6 +292,52 @@ app.post('/api/save-text', (req, res) => {
   } catch (error) {
     console.error('Error saving text file:', error);
     res.status(500).json({ error: 'Failed to save text file', message: error.message });
+  }
+});
+
+/**
+ * Endpoint para eliminar una imagen y sus archivos relacionados
+ * POST /api/delete-image
+ * Body: { imagePath: string, annotationPath?: string, maskPath?: string }
+ */
+app.post('/api/delete-image', (req, res) => {
+  try {
+    const { imagePath, annotationPath, maskPath } = req.body;
+
+    if (!imagePath) {
+      return res.status(400).json({ error: 'imagePath is required' });
+    }
+
+    if (!fs.existsSync(imagePath) || !fs.statSync(imagePath).isFile()) {
+      return res.status(404).json({ error: 'Image file not found' });
+    }
+
+    fs.unlinkSync(imagePath);
+
+    const deleteIfPossible = (targetPath) => {
+      if (!targetPath) {
+        return false;
+      }
+      if (fs.existsSync(targetPath)) {
+        const stats = fs.statSync(targetPath);
+        if (stats.isFile()) {
+          fs.unlinkSync(targetPath);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const deleted = {
+      image: true,
+      annotation: deleteIfPossible(annotationPath),
+      mask: deleteIfPossible(maskPath)
+    };
+
+    res.json({ success: true, deleted });
+  } catch (error) {
+    console.error('Error deleting image:', error);
+    res.status(500).json({ error: 'Failed to delete image', message: error.message });
   }
 });
 
