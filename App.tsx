@@ -2,6 +2,8 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ImageViewer, { ImageViewerApi } from './components/ImageViewer';
 import Toolbar from './components/Toolbar';
 import DirectoryBrowser from './components/DirectoryBrowser';
+import Confetti from './components/Confetti';
+import RocketLaunchAnimation from './components/RocketLaunchAnimation';
 import { TransformState } from './hooks/useImageTransform';
 import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, ImageFile } from './utils/api';
 
@@ -49,144 +51,6 @@ const hexToRgba = (hex: string, alpha: number = 0.5): string => {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
-// --- Rocket Launch Animation Component ---
-const RocketLaunchAnimation: React.FC = () => {
-  return (
-    <div className="relative w-full h-64 overflow-hidden bg-gradient-to-b from-blue-900 via-purple-900 to-black rounded-lg">
-      <style>{`
-        @keyframes rocketFly {
-          0% { 
-            transform: translateY(0) translateX(-50%) scale(1);
-            opacity: 1;
-          }
-          50% {
-            transform: translateY(-80px) translateX(-50%) scale(0.8);
-            opacity: 0.9;
-          }
-          100% { 
-            transform: translateY(-250px) translateX(-50%) scale(0.3);
-            opacity: 0;
-          }
-        }
-        @keyframes flame {
-          0%, 100% { 
-            transform: translateX(-50%) scaleY(1);
-            opacity: 0.8;
-          }
-          50% { 
-            transform: translateX(-50%) scaleY(1.3);
-            opacity: 1;
-          }
-        }
-        @keyframes smoke {
-          0% {
-            transform: translateY(0) scale(1);
-            opacity: 0.6;
-          }
-          100% {
-            transform: translateY(-100px) scale(2);
-            opacity: 0;
-          }
-        }
-        @keyframes star-twinkle {
-          0%, 100% { opacity: 0.3; }
-          50% { opacity: 1; }
-        }
-        .rocket {
-          position: absolute;
-          bottom: 20%;
-          left: 50%;
-          font-size: 3rem;
-          animation: rocketFly 3s ease-in infinite;
-        }
-        .flame {
-          position: absolute;
-          bottom: calc(20% - 30px);
-          left: 50%;
-          font-size: 2rem;
-          animation: flame 0.2s ease-in-out infinite;
-        }
-        .smoke {
-          position: absolute;
-          bottom: calc(20% - 40px);
-          left: 50%;
-          font-size: 1.5rem;
-          animation: smoke 2s ease-out infinite;
-        }
-        .smoke:nth-child(2) { animation-delay: 0.3s; }
-        .smoke:nth-child(3) { animation-delay: 0.6s; }
-        .smoke:nth-child(4) { animation-delay: 0.9s; }
-        .star {
-          position: absolute;
-          color: white;
-          font-size: 0.5rem;
-          animation: star-twinkle 2s ease-in-out infinite;
-        }
-        .planet {
-          position: absolute;
-          font-size: 2rem;
-          opacity: 0.6;
-        }
-      `}</style>
-      
-      {/* Stars */}
-      <span className="star" style={{ top: '10%', left: '20%', animationDelay: '0s' }}>✨</span>
-      <span className="star" style={{ top: '25%', left: '80%', animationDelay: '0.5s' }}>✨</span>
-      <span className="star" style={{ top: '15%', left: '60%', animationDelay: '1s' }}>⭐</span>
-      <span className="star" style={{ top: '40%', left: '15%', animationDelay: '1.5s' }}>✨</span>
-      <span className="star" style={{ top: '35%', left: '85%', animationDelay: '0.8s' }}>⭐</span>
-      <span className="star" style={{ top: '50%', left: '50%', animationDelay: '0.3s' }}>✨</span>
-      
-      {/* Planet */}
-      <span className="planet" style={{ top: '10%', right: '10%' }}>🪐</span>
-      
-      {/* Smoke clouds */}
-      <span className="smoke">💨</span>
-      <span className="smoke">💨</span>
-      <span className="smoke">💨</span>
-      <span className="smoke">💨</span>
-      
-      {/* Flame */}
-      <span className="flame">🔥</span>
-      
-      {/* Rocket */}
-      <span className="rocket">🚀</span>
-      
-      {/* Launch text */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white text-sm font-bold">
-        🚀 Despegando hacia el espacio...
-      </div>
-    </div>
-  );
-};
-
-// --- Confetti Component ---
-const CONFETTI_COUNT = 150;
-const CONFETTI_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#a855f7', '#ec4899'];
-
-const ConfettiPiece: React.FC = () => {
-    const style: React.CSSProperties = {
-        left: `${Math.random() * 100}%`,
-        backgroundColor: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
-        animationDelay: `${Math.random() * 2}s`,
-        width: `${Math.random() * 8 + 8}px`,
-        height: `${Math.random() * 5 + 5}px`,
-        opacity: Math.random() * 0.5 + 0.5,
-        transform: `rotate(${Math.random() * 360}deg)`,
-    };
-    return <div className="confetti" style={style}></div>;
-};
-
-const Confetti: React.FC = () => {
-    return (
-        <div className="fixed top-0 left-0 w-full h-full pointer-events-none z-50 overflow-hidden">
-            {Array.from({ length: CONFETTI_COUNT }).map((_, i) => (
-                <ConfettiPiece key={i} />
-            ))}
-        </div>
-    );
-};
-// --- End Confetti Component ---
 
 const trimTrailingSeparator = (value: string) => value.replace(/[\\/]+$/, '');
 const detectSeparator = (value: string) => (value.includes('\\') ? '\\' : '/');
@@ -213,8 +77,6 @@ const getDefaultOutputPaths = (baseDir: string): OutputPaths => {
 
 const App: React.FC = () => {
   const [imageFiles, setImageFiles] = useState<ImageFile[]>([]);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  const [imagePaths, setImagePaths] = useState<string[]>([]);
   const [currentDirectory, setCurrentDirectory] = useState<string>('');
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageDimensions, setImageDimensions] = useState<{width: number, height: number} | null>(null);
@@ -270,12 +132,6 @@ const App: React.FC = () => {
     isTimerPausedRef.current = isTimerPaused;
   }, [isTimerPaused]);
 
-  useEffect(() => {
-    return () => {
-      imageUrls.forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [imageUrls]);
-
   // Effect to calculate total project times
   useEffect(() => {
     const totalTime = Object.values(allAnnotationTimes).reduce((sum, time) => sum + time, 0) + 
@@ -288,9 +144,10 @@ const App: React.FC = () => {
   }, [allAnnotationTimes, allActiveAnnotationTimes, annotationTime, activeAnnotationTime, currentIndex, completedImages]);
 
   // Effect to load image dimensions when the current image changes
+  const currentImageUrl = imageFiles[currentIndex]?.url ?? null;
+
   useEffect(() => {
-    const currentUrl = imageUrls[currentIndex];
-    if (!currentUrl) {
+    if (!currentImageUrl) {
       setImageDimensions(null);
       return;
     }
@@ -299,9 +156,9 @@ const App: React.FC = () => {
     img.onload = () => {
       setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
     };
-    img.src = currentUrl;
-
-  }, [currentIndex, imageUrls]);
+    img.onerror = () => setImageDimensions(null);
+    img.src = currentImageUrl;
+  }, [currentImageUrl]);
 
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) {
@@ -419,11 +276,8 @@ const App: React.FC = () => {
 
   }, [allAnnotations, allImageDimensions, currentIndex, annotationClasses]);
 
-  const resetState = () => {
-    imageUrls.forEach(url => URL.revokeObjectURL(url));
+  const resetState = useCallback(() => {
     setImageFiles([]);
-    setImageUrls([]);
-    setImagePaths([]);
     setCurrentDirectory('');
     setCurrentIndex(0);
     setIsDrawingMode(false);
@@ -458,15 +312,10 @@ const App: React.FC = () => {
     isTimerPausedRef.current = false;
     setCompletedImages({});
     setShowConfetti(false);
-  };
+  }, []);
 
   const handleDirectorySelect = async (dirPath: string) => {
     try {
-      console.log('═══════════════════════════════════════');
-      console.log('🚀 STARTING DIRECTORY LOAD');
-      console.log('📁 Selected path:', dirPath);
-      console.log('═══════════════════════════════════════');
-      
       setIsLoadingProject(true);
       resetState();
       setShowDirectoryBrowser(false);
@@ -478,62 +327,46 @@ const App: React.FC = () => {
       setOutputPaths(defaultPaths);
       const persistedPathsPromise = loadPersistedOutputPaths(dirPath);
 
-      const urls = filesData.images.map(img => img.url);
-      const paths = filesData.images.map(img => img.path);
-      setImageUrls(urls);
-      setImagePaths(paths);
-
-      // Load all image dimensions for stats
-      const dimsPromises = urls.map(url => new Promise<{width: number, height: number}>((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-        img.onerror = () => resolve({ width: 0, height: 0 });
-        img.src = url;
-      }));
+      const dimsPromises = filesData.images.map(
+        (image) =>
+          new Promise<{ width: number; height: number }>((resolve) => {
+            const preload = new Image();
+            preload.onload = () => resolve({ width: preload.naturalWidth, height: preload.naturalHeight });
+            preload.onerror = () => resolve({ width: 0, height: 0 });
+            preload.src = image.url;
+          })
+      );
 
       const dims = await Promise.all(dimsPromises);
       const dimsRecord = dims.reduce((acc, dim, index) => {
         acc[index] = dim;
         return acc;
-      }, {} as Record<number, {width: number, height: number}>);
+      }, {} as Record<number, { width: number; height: number }>);
       setAllImageDimensions(dimsRecord);
 
-      // Variable to store loaded annotations for use in times loading
       let newAllAnnotations: Record<number, Annotation[]> = {};
 
-      // Load JSON annotations from the annotations subfolder
       try {
         const annotationsFolder = defaultPaths.annotations;
-        console.log('🔍 Looking for annotations in:', annotationsFolder);
-        console.log('📂 Base directory selected:', dirPath);
-        console.log('📸 Number of images found:', filesData.images.length);
-        
         const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
-          console.log('⚠️ Annotations folder not found or empty:', err.message);
-          console.log('ℹ️ This is normal if you haven\'t saved annotations yet.');
-          console.log('ℹ️ Annotations will be saved to:', annotationsFolder);
+          console.warn('Annotations folder unavailable:', err);
           return { images: [], jsonFiles: [] };
         });
-        
-        console.log('📁 Found JSON files:', annotationsFolderData.jsonFiles.length);
-        
+
         if (annotationsFolderData.jsonFiles.length > 0) {
-          const jsonDataPromises = annotationsFolderData.jsonFiles.map(jsonFile => {
-            console.log('📄 Loading JSON file:', jsonFile.name);
-            return readJsonFile(jsonFile.path).catch(err => {
-              console.error(`❌ Error loading ${jsonFile.name}:`, err);
+          const jsonDataPromises = annotationsFolderData.jsonFiles.map((jsonFile) =>
+            readJsonFile(jsonFile.path).catch((err) => {
+              console.error(`Error loading ${jsonFile.name}:`, err);
               return null;
-            });
-          });
+            })
+          );
 
           const jsonContents = await Promise.all(jsonDataPromises);
-          console.log('✅ Loaded JSON contents:', jsonContents.filter(c => c !== null).length);
 
           const jsonAnnotationsMap = new Map<string, any[]>();
           jsonContents.forEach((data, index) => {
             if (data && data.annotations && Array.isArray(data.annotations)) {
               const baseName = annotationsFolderData.jsonFiles[index].name.split('.').slice(0, -1).join('.');
-              console.log(`📝 Mapping annotations for: ${baseName} (${data.annotations.length} annotations)`);
               jsonAnnotationsMap.set(baseName, data.annotations);
             }
           });
@@ -545,7 +378,6 @@ const App: React.FC = () => {
             const annotationsData = jsonAnnotationsMap.get(imageBaseName);
 
             if (annotationsData) {
-              console.log(`✨ Found ${annotationsData.length} annotations for image: ${imageFile.name}`);
               newAllAnnotations[index] = annotationsData.map((ann: any) => {
                 if (ann.className && ann.classId && !loadedClasses.has(ann.className)) {
                   loadedClasses.set(ann.className, { id: ann.classId });
@@ -556,8 +388,6 @@ const App: React.FC = () => {
                   className: ann.className,
                 };
               });
-            } else {
-              console.log(`⭕ No annotations found for: ${imageFile.name}`);
             }
           });
 
@@ -567,15 +397,12 @@ const App: React.FC = () => {
             finalClasses.push({
               name,
               id: data.id,
-              color: PALETTE[colorIndex % PALETTE.length]
+              color: PALETTE[colorIndex % PALETTE.length],
             });
             colorIndex++;
           }
 
           finalClasses.sort((a, b) => a.id - b.id);
-
-          console.log('🎨 Loaded annotation classes:', finalClasses.map(c => `${c.name} (ID: ${c.id})`));
-          console.log('📊 Total annotations loaded:', Object.keys(newAllAnnotations).length, 'images with annotations');
 
           setAnnotationClasses(finalClasses);
           setAllAnnotations(newAllAnnotations);
@@ -583,38 +410,28 @@ const App: React.FC = () => {
           if (finalClasses.length > 0) {
             setSelectedAnnotationClass(finalClasses[0].name);
           }
-        } else {
-          console.log('ℹ️ No JSON files found in annotations folder');
         }
       } catch (error) {
-        console.error('❌ Error loading annotations:', error);
+        console.error('Error loading annotations:', error);
       }
 
-      // Load annotation times from times folder
       try {
         const timesFilePath = joinPathSegments(defaultPaths.times, 'annotation_times.txt');
-        console.log('⏱️ Looking for times file:', timesFilePath);
-        
-        const timesContent = await readTextFile(timesFilePath).catch((err) => {
-          console.log('ℹ️ Times file not found, starting fresh');
-          return null;
-        });
+
+        const timesContent = await readTextFile(timesFilePath).catch(() => null);
 
         if (timesContent) {
-          console.log('⏱️ Parsing times file...');
           const loadedTimes: Record<number, number> = {};
           const loadedActiveTimes: Record<number, number> = {};
           const loadedCompleted: Record<number, boolean> = {};
 
           const lines = timesContent.split('\n');
-          let currentImageIndex = -1;
 
           filesData.images.forEach((imageFile, index) => {
             const imageName = imageFile.name;
-            const imageLineIndex = lines.findIndex(line => line.trim() === `${imageName}:`);
-            
+            const imageLineIndex = lines.findIndex((line) => line.trim() === `${imageName}:`);
+
             if (imageLineIndex !== -1) {
-              // Parse total time
               const totalTimeLine = lines[imageLineIndex + 1];
               if (totalTimeLine && totalTimeLine.includes('Total Time:')) {
                 const match = totalTimeLine.match(/(\d+) minute\(s\) (\d+) second\(s\)/);
@@ -625,7 +442,6 @@ const App: React.FC = () => {
                 }
               }
 
-              // Parse active time
               const activeTimeLine = lines[imageLineIndex + 2];
               if (activeTimeLine && activeTimeLine.includes('Active Annotation Time:')) {
                 const match = activeTimeLine.match(/(\d+) minute\(s\) (\d+) second\(s\)/);
@@ -636,9 +452,7 @@ const App: React.FC = () => {
                 }
               }
 
-              // If there's time recorded, consider it as having been worked on
               if (loadedTimes[index] > 0) {
-                // Check if there are annotations for this image
                 if (newAllAnnotations[index] && newAllAnnotations[index].length > 0) {
                   loadedCompleted[index] = true;
                 }
@@ -646,13 +460,12 @@ const App: React.FC = () => {
             }
           });
 
-          console.log('✅ Loaded times for', Object.keys(loadedTimes).length, 'images');
           setAllAnnotationTimes(loadedTimes);
           setAllActiveAnnotationTimes(loadedActiveTimes);
           setCompletedImages(loadedCompleted);
         }
       } catch (error) {
-        console.error('❌ Error loading times:', error);
+        console.error('Error loading times:', error);
       }
 
       const persistedPaths = await persistedPathsPromise;
@@ -661,16 +474,13 @@ const App: React.FC = () => {
       }
 
       setIsLoadingProject(false);
-      console.log('✅ PROJECT LOADED SUCCESSFULLY');
     } catch (error) {
       console.error('Error loading directory:', error);
       setIsLoadingProject(false);
       alert(`Failed to load directory: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  };
-
-  const triggerFileSelect = useCallback(() => setShowDirectoryBrowser(true), []);
-  const clearImages = useCallback(() => resetState(), [imageUrls]);
+  };  const triggerFileSelect = useCallback(() => setShowDirectoryBrowser(true), []);
+  const clearImages = useCallback(() => resetState(), [resetState]);
 
   const changeImage = useCallback((newIndex: number) => {
     if (!completedImages[currentIndex]) {
@@ -990,7 +800,6 @@ const App: React.FC = () => {
   const handleMarkAsComplete = useCallback(() => {
     // Toggle: if already completed, unmark it
     if (completedImages[currentIndex]) {
-      console.log('🔓 Unmarking image as complete - resuming timers');
       setCompletedImages(prev => {
         const newCompleted = { ...prev };
         delete newCompleted[currentIndex];
@@ -1000,7 +809,6 @@ const App: React.FC = () => {
       return;
     }
 
-    console.log('✅ Marking image as complete - stopping timers');
     if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -1100,6 +908,10 @@ const App: React.FC = () => {
   const totalImages = imageFiles.length;
   const isCurrentImageCompleted = !!completedImages[currentIndex];
 
+  const hasImages = imageFiles.length > 0;
+  const currentImage = imageFiles[currentIndex];
+  const viewerImageKey = currentImage?.path ?? currentImage?.url ?? `image-${currentIndex}`;
+
   return (
     <div className="w-screen h-screen bg-gray-900 flex flex-row overflow-hidden font-sans">
       {showConfetti && <Confetti />}
@@ -1129,7 +941,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {imageUrls.length > 0 && (
+      {hasImages && (
         <Toolbar
           images={imageFiles}
           currentIndex={currentIndex}
@@ -1176,11 +988,11 @@ const App: React.FC = () => {
       )}
       
       <main className="flex-1 h-full flex items-center justify-center relative bg-black/50 p-8">
-        {imageUrls.length > 0 && imageDimensions ? (
+        {hasImages && imageDimensions && currentImageUrl ? (
           <ImageViewer
             ref={imageViewerRef}
-            src={imageUrls[currentIndex]}
-            key={imageUrls[currentIndex]}
+            src={currentImageUrl}
+            key={viewerImageKey}
             onTransformChange={handleTransformChange}
             isDrawingMode={isDrawingMode && !isCurrentImageCompleted}
             annotations={currentAnnotations}
@@ -1212,3 +1024,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+

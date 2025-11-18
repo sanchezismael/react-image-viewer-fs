@@ -162,7 +162,6 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
         return; 
     }
 
-    console.log('🎨 Draw START');
     startActiveTimer();
     setIsDrawing(true);
     setCurrentPath([point]);
@@ -179,7 +178,6 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   }, [isDrawing, getTransformedPoint, imageDimensions]);
 
   const handleDrawEnd = useCallback(() => {
-    console.log('🎨 Draw END - isDrawing:', isDrawing, 'points:', currentPath.length);
     if (!isDrawing) return;
     stopActiveTimer();
     setIsDrawing(false);

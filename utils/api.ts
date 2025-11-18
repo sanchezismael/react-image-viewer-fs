@@ -199,5 +199,3 @@ export async function saveTextFile(filePath: string, content: string): Promise<v
   } catch (error) {
     console.error('Error saving text file:', error);
     throw error;
-  }
-}
