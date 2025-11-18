@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { ImageFile, getFiles, deleteImageAssets } from '../utils/api';
 import { joinPathSegments, getDefaultOutputPaths, OutputPaths } from '../utils/helpers';
+import { toast } from 'sonner';
 
 export interface ProjectDataState {
   imageFiles: ImageFile[];
@@ -61,7 +62,7 @@ export const useProjectData = (): ProjectDataState & ProjectDataActions => {
       // Reset other state if needed, but that might be handled by effects in App or other hooks
     } catch (error) {
       console.error('Error loading directory:', error);
-      alert('Failed to load directory.');
+      toast.error('Failed to load directory.');
     } finally {
       setIsLoadingProject(false);
     }

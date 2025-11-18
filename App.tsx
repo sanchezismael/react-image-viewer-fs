@@ -323,12 +323,14 @@ const App: React.FC = () => {
           })
       );
 
+      /* Lazy loading optimization: Do NOT load all dimensions at once.
       const dims = await Promise.all(dimsPromises);
       const dimsRecord = dims.reduce((acc, dim, index) => {
         acc[index] = dim;
         return acc;
       }, {} as Record<number, { width: number; height: number }>);
       setAllImageDimensions(dimsRecord);
+      */
 
       let newAllAnnotations: Record<number, Annotation[]> = {};
       let loadedTimes: Record<number, number> = {};
@@ -337,6 +339,9 @@ const App: React.FC = () => {
 
       try {
         const annotationsFolder = effectivePaths.annotations;
+        /* Lazy loading optimization: Do NOT load all JSONs at once.
+           We will load them on demand in useEffect when currentIndex changes.
+           
         const annotationsFolderData = await getFiles(annotationsFolder).catch((err) => {
           console.warn('Annotations folder unavailable:', err);
           return { images: [], jsonFiles: [] };
@@ -400,6 +405,7 @@ const App: React.FC = () => {
             setSelectedAnnotationClass(finalClasses[0].name);
           }
         }
+        */
       } catch (error) {
         console.error('Error loading annotations:', error);
       }
