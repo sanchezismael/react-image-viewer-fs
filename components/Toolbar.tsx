@@ -157,36 +157,37 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
   return (
     <aside className="w-80 h-screen glass-panel text-white flex flex-col p-5 border-r border-white/10 shadow-2xl shrink-0 overflow-y-auto thumbnail-scrollbar relative">
-      <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-indigo-600/20 to-transparent pointer-events-none" />
+      <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/8 to-transparent pointer-events-none" />
       <div className="mb-4 pb-4 border-b border-white/5 relative z-10">
-        <h1 className="text-2xl font-bold neon-text mb-4">Image Annotator</h1>
+        <h1 className="text-2xl font-bold text-white mb-1">Image Annotator</h1>
+        <p className="text-[12px] text-white/50">Anota con precisión y guarda todo sin perder ritmo.</p>
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onFileSelect} className="px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-400">
+          <button onClick={onFileSelect} className="px-4 py-2 text-sm font-semibold bg-white text-slate-900 rounded-md hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-white">
             Change Folder
           </button>
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-rose-500 text-white rounded-md hover:bg-rose-400 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-rose-400">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-slate-800 text-white rounded-md hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-slate-500">
             Close
           </button>
           <button
             onClick={onSaveAll}
             disabled={isSaving}
-            className="col-span-2 px-4 py-2 text-sm font-semibold bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:bg-gray-600 disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-400"
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-slate-100 text-slate-900 rounded-md hover:bg-white disabled:bg-gray-600 disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-white"
           >
             {isSaving ? 'Saving…' : 'Guardar cambios'}
           </button>
           <button
             onClick={onOpenDashboard}
-            className="col-span-2 px-4 py-2 text-sm font-semibold bg-gradient-to-r from-purple-600 to-indigo-500 text-white rounded-md hover:from-purple-500 hover:to-indigo-400 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-purple-300 flex items-center justify-center gap-2"
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-slate-900/60 text-white rounded-md hover:bg-slate-800 transition-colors border border-white/10 flex items-center justify-center gap-2"
           >
             <ChartIcon className="w-5 h-5" />
             <span>Dashboard</span>
           </button>
           <button 
             onClick={onMarkAsComplete}
-            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 flex items-center justify-center gap-2 ${
+            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 flex items-center justify-center gap-2 ${
               isCurrentImageCompleted 
-                ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500 text-white' 
-                : 'bg-green-600 hover:bg-green-700 focus:ring-green-500 text-white'
+                ? 'bg-amber-500 hover:bg-amber-400 focus:ring-amber-300 text-slate-900' 
+                : 'bg-emerald-500 hover:bg-emerald-400 focus:ring-emerald-300 text-slate-900'
             }`}
           >
             {isCurrentImageCompleted ? (
@@ -201,8 +202,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
           <button
             onClick={onDeleteCurrentImage}
             disabled={isDeletingImage}
-            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 flex items-center justify-center gap-2 ${
-              isDeletingImage ? 'bg-gray-600 cursor-wait text-white' : 'bg-red-700 hover:bg-red-800 focus:ring-red-500 text-white'
+            className={`col-span-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 flex items-center justify-center gap-2 ${
+              isDeletingImage ? 'bg-gray-600 cursor-wait text-white' : 'bg-red-600 hover:bg-red-500 focus:ring-red-300 text-white'
             }`}
           >
             <TrashIcon className="w-5 h-5" />

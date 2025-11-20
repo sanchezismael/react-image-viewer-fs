@@ -111,16 +111,16 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="glass-strong rounded-xl w-[90%] max-w-3xl max-h-[80vh] flex flex-col border border-white/10">
+      <div className="glass-strong rounded-2xl w-[90%] max-w-3xl max-h-[80vh] flex flex-col border border-white/10">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-100 flex items-center gap-2">
-            <FolderIcon className="w-6 h-6 text-indigo-400" />
+        <div className="flex items-center justify-between p-6 border-b border-white/10">
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <FolderIcon className="w-6 h-6 text-white" />
             Select Directory
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center"
+            className="text-gray-400 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center"
           >
             X
           </button>
@@ -128,10 +128,10 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
 
         {/* Breadcrumbs */}
         {breadcrumbs.length > 0 && (
-          <div className="px-6 py-3 bg-gray-750 border-b border-gray-700 flex items-center gap-2 overflow-x-auto">
+          <div className="px-6 py-3 bg-white/5 border-b border-white/10 flex items-center gap-2 overflow-x-auto">
             <button
               onClick={loadDrives}
-              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 text-gray-300 hover:text-white transition-colors flex-shrink-0"
+              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 text-gray-200 hover:text-white transition-colors flex-shrink-0"
               title="Home"
             >
               <HomeIcon className="w-4 h-4" />
@@ -146,14 +146,14 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
                   {!isLast ? (
                     <button
                       onClick={() => handleBreadcrumbClick(crumb)}
-                      className="px-2 py-1 rounded hover:bg-gray-700 text-gray-400 hover:text-white transition-colors text-sm flex-shrink-0"
-                    >
-                      {displayName}
-                    </button>
-                  ) : (
-                    <span className="px-2 py-1 text-white font-medium text-sm flex-shrink-0">
-                      {displayName}
-                    </span>
+                    className="px-2 py-1 rounded hover:bg-white/10 text-gray-300 hover:text-white transition-colors text-sm flex-shrink-0"
+                  >
+                    {displayName}
+                  </button>
+                ) : (
+                  <span className="px-2 py-1 text-white font-medium text-sm flex-shrink-0 bg-white/5 rounded">
+                    {displayName}
+                  </span>
                   )}
                 </React.Fragment>
               );
@@ -165,14 +165,14 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <SpinnerIcon className="w-10 h-10 text-indigo-500 animate-spin" />
+              <SpinnerIcon className="w-10 h-10 text-white animate-spin" />
             </div>
           ) : error ? (
-            <div className="flex flex-col items-center justify-center h-64 text-red-400">
+            <div className="flex flex-col items-center justify-center h-64 text-rose-300">
               <p className="text-lg mb-4">{error}</p>
               <button
                 onClick={currentPath ? () => navigateToPath(currentPath) : loadDrives}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                className="px-4 py-2 bg-white text-slate-900 rounded-lg transition-colors"
               >
                 Retry
               </button>
@@ -184,9 +184,9 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
                 <button
                   key={drive.path}
                   onClick={() => navigateToPath(drive.path)}
-                  className="flex items-center gap-3 p-4 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-left group"
+                  className="flex items-center gap-3 p-4 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors text-left group"
                 >
-                  <HardDriveIcon className="w-8 h-8 text-indigo-400 group-hover:text-indigo-300 flex-shrink-0" />
+                  <HardDriveIcon className="w-8 h-8 text-white group-hover:text-slate-200 flex-shrink-0" />
                   <div>
                     <p className="font-medium text-white">{drive.name}</p>
                     <p className="text-sm text-gray-400">{drive.path}</p>
@@ -201,9 +201,9 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
                 <button
                   key={item.path}
                   onClick={() => handleItemClick(item)}
-                  className="w-full flex items-center gap-3 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-left group"
+                  className="w-full flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors text-left group"
                 >
-                  <FolderIcon className="w-6 h-6 text-yellow-400 group-hover:text-yellow-300 flex-shrink-0" />
+                  <FolderIcon className="w-6 h-6 text-white group-hover:text-slate-100 flex-shrink-0" />
                   <span className="text-gray-100 group-hover:text-white flex-1 truncate">
                     {item.name}
                   </span>

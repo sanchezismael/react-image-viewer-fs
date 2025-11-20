@@ -280,7 +280,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   return (
     <div
       ref={viewerRef}
-      className={`relative mx-auto overflow-hidden touch-none select-none bg-[#0d111c] border border-white/10 rounded-2xl shadow-2xl ${viewerCursorClass}`}
+      className={`relative mx-auto overflow-hidden touch-none select-none bg-[#0d111c] border border-white/10 rounded-2xl shadow-[0_25px_60px_rgba(0,0,0,0.45)] ${viewerCursorClass}`}
       style={{
         width: '100%',
         height: '100%',
