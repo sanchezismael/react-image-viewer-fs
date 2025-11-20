@@ -132,6 +132,8 @@ const App: React.FC = () => {
     handleDeleteAnnotation: deleteAnnotation
   } = useAnnotations(currentIndex);
 
+  const [timerRestartKey, setTimerRestartKey] = React.useState(0);
+
   const {
     annotationTime,
     activeAnnotationTime,
@@ -150,7 +152,7 @@ const App: React.FC = () => {
     stopActiveTimer,
     resetTimersForNewImage,
     clearTimers
-  } = useTimer(currentIndex, !!completedImages[currentIndex]);
+  } = useTimer(currentIndex, !!completedImages[currentIndex], timerRestartKey);
 
   const [activeTransform, setActiveTransform] = useState<TransformState>({ scale: 1, x: 0, y: 0 });
   const [isDrawingMode, setIsDrawingMode] = useState(false);
@@ -358,6 +360,7 @@ const App: React.FC = () => {
     setOutputPaths(null);
     setShowOutputSettings(false);
     clearTimers();
+    setTimerRestartKey((key) => key + 1);
     setAnnotationTime(0);
     setAllAnnotationTimes({});
     setActiveAnnotationTime(0);
@@ -483,23 +486,6 @@ const App: React.FC = () => {
   };
 
   const clearImages = useCallback(() => resetState(), [resetState]);
-
-  const changeImage = useCallback((newIndex: number) => {
-    if (!completedImages[currentIndex]) {
-      setAllAnnotationTimes(prev => ({ ...prev, [currentIndex]: annotationTime }));
-      setAllActiveAnnotationTimes(prev => ({ ...prev, [currentIndex]: activeAnnotationTime }));
-    }
-    setCurrentIndex(newIndex);
-    setSelectedAnnotationId(null);
-    setImageDimensions(null); // Reset dimensions to trigger loading for the new image
-    
-    // Reset timers for new image
-    // Note: We need to access the latest state of allAnnotationTimes here, but we only have the closure value.
-    // However, since we just updated it, we might need to rely on the effect in useTimer or pass the updated values.
-    // Actually, useTimer handles the timer reset when currentIndex changes if we were using effects, 
-    // but here we want to be explicit.
-    // The useTimer hook's effect on [currentIndex] will handle loading the times.
-  }, [currentIndex, completedImages, annotationTime, activeAnnotationTime, setAllAnnotationTimes, setAllActiveAnnotationTimes, setCurrentIndex, setSelectedAnnotationId, setImageDimensions]);
 
   const formatTimeForFile = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);

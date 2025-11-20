@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ImageFile, getFiles, deleteImageAssets } from '../utils/api';
+import { ImageFile, getFiles } from '../utils/api';
 import { joinPathSegments, getDefaultOutputPaths, OutputPaths } from '../utils/helpers';
 import { toast } from 'sonner';
 

@@ -122,7 +122,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
             onClick={onClose}
             className="text-gray-400 hover:text-gray-200 text-2xl font-bold w-8 h-8 flex items-center justify-center"
           >
-            ??
+            X
           </button>
         </div>
 
@@ -225,7 +225,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
             disabled={!currentPath && drives.length > 0}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
-            ??? Back
+            <span className="mr-1">&lt;</span> Back
           </button>
           <div className="flex gap-3">
             <button

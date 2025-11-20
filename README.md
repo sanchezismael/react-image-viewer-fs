@@ -7,57 +7,54 @@
 Image annotation tool with polygon drawing, timer tracking, and local file system integration.
 
 ## Features
-
-- 🖼️ **Direct File System Access**: Browse and load images from local directories without uploads
-- ⏱️ **Time Tracking**: Automatic timer for annotation time (total and active time)
-- ✏️ **Polygon Annotations**: Draw and edit polygon annotations on images
-- 🎨 **Custom Classes**: Define multiple annotation classes with custom colors
-- 💾 **Auto-save**: Single "Guardar cambios" button saves JSON, PNG mask, and `annotation_times.txt`, and switching images also auto-saves
-- �️ **Output folders**: JSON, masks, and time logs are organized in dedicated subdirectories (annotations/masks/times)
-- �📊 **Statistics**: Real-time pixel statistics and completion progress
-- 🎊 **Completion Tracking**: Mark images as complete with confetti animation
-- 🔍 **Zoom & Pan**: Full image navigation with mouse and keyboard
+- Direct file system access: browse and load images from local directories without uploads
+- Time tracking: automatic timer for annotation time (total and active time)
+- Polygon annotations: draw and edit polygon annotations on images
+- Custom classes: define multiple annotation classes with custom colors
+- Auto-save: single "Guardar cambios" button saves JSON, PNG mask, and `annotation_times.txt`; switching images auto-saves too
+- Output folders: JSON, masks, and time logs organized in dedicated subdirectories (annotations/masks/times)
+- Statistics: real-time pixel statistics and completion progress
+- Completion tracking: mark images as complete with confetti animation
+- Zoom and pan with mouse and keyboard
 
 ## Quick Start
 
-### ⚠️ Prerequisito: Node.js debe estar disponible
+### Prerequisite: Node.js must be available
 
-Si al ejecutar `npm` o `node` en una nueva terminal obtienes errores, sigue la **[Guía de Configuración Completa (SETUP.md)](./SETUP.md)**.
+If running `npm` or `node` fails in a new terminal, follow the **[Complete Setup Guide (SETUP.md)](./SETUP.md)**.
 
-**Solución rápida** (ejecutar como ADMINISTRADOR):
+Quick fix (run as Administrator):
 ```powershell
 .\setup-node-path.ps1
 ```
 
-Luego cierra **TODAS** las terminales y abre una nueva. Node/npm funcionarán automáticamente.
+Then close all terminals and open a new one. Node/npm should be available automatically.
 
 ---
 
-### Option 1: Double-click Launcher (Easiest)
+### Option 1: Double-click launcher (easiest)
 
-Simply double-click on:
-- **`start-app.bat`** (Windows Batch)
-- **`start-app.ps1`** (PowerShell - right-click → Run with PowerShell)
+Simply double-click:
+- `start-app.bat` (Windows Batch)
+- `start-app.ps1` (PowerShell - right-click and select "Run with PowerShell")
 
-Ambos scripts:
-- Aseguran que `node` esté disponible (añaden `C:\Program Files\nodejs` al PATH si hace falta).
-- Ejecutan `npm install` automáticamente la primera vez.
-- Lanzan `npm run dev` directamente en Windows (sin WSL).
+Both scripts:
+- Ensure `node` is on PATH (adds `C:\Program Files\nodejs` if needed)
+- Run `npm install` automatically the first time
+- Launch `npm run dev` directly on Windows (no WSL required)
 
-### Option 2: Manual Start
+### Option 2: Manual start
 
-**Prerequisites en Windows:** Tener Node.js 18 LTS o superior instalado (MSI oficial o `winget install OpenJS.NodeJS.LTS`).
+Prerequisites on Windows: Node.js 18 LTS or newer installed.
 
 1. Install dependencies:
    ```bash
    npm install
    ```
-
 2. Run the application:
    ```bash
    npm run dev
    ```
-
 3. Open your browser:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:3001
@@ -69,30 +66,30 @@ Ambos scripts:
 3. Click **"Select"** to load all images from that folder
 4. Add annotation classes and start drawing polygons
 5. Use arrow keys to navigate between images
-6. Use **"Guardar cambios"** to persist JSON, mask, and times (also auto-saves before switching images)
+6. Use **"Guardar cambios"** to persist JSON, mask, and times (auto-saves before switching images)
 
-### Saving & auto-save
+### Saving and auto-save
 
-- The new **"Guardar cambios"** button writes the current image annotations (`.json`), the mask (`_mask.png`), and the global timer log (`annotation_times.txt`) directly inside the open folder.
-- Los archivos se organizan automáticamente en:
-   - `<carpeta_imágenes>/annotations/*.json`
-   - `<carpeta_imágenes>/masks/*_mask.png`
-   - `<carpeta_imágenes>/times/annotation_times.txt`
-- Navigating to another image (buttons, thumbnail jump, or arrow keys) triggers the same save process automatically before the image changes.
-- The timer log keeps both total and active annotation time per image, so you always have an up-to-date history without manual exports.
-- Si necesitas rutas personalizadas (por ejemplo, otro disco), abre la sección **Output Folders → Avanzado** en la barra lateral, ajusta las rutas y, si quieres volver a la estructura estándar, usa "Restaurar rutas por defecto".
-- Las rutas personalizadas se guardan en `.viewer-config.json` dentro de la carpeta raíz de imágenes, por lo que la configuración se recuerda automáticamente al volver a abrirla.
+- The **"Guardar cambios"** button writes the current image annotations (`.json`), the mask (`_mask.png`), and the global timer log (`annotation_times.txt`) inside the open folder.
+- Files are organized in:
+   - `<image_folder>/annotations/*.json`
+   - `<image_folder>/masks/*_mask.png`
+   - `<image_folder>/times/annotation_times.txt`
+- Navigating to another image (buttons, jump, or arrow keys) triggers the same save process automatically.
+- The timer log keeps both total and active annotation time per image.
+- For custom output paths, open **Output Folders > Avanzado** in the sidebar, adjust the paths, and use "Restaurar rutas por defecto" to return to the default structure.
+- Custom paths are stored in `.viewer-config.json` inside the root image folder so they persist when you reopen it.
 
 ## Keyboard Shortcuts
 
-- **Arrow Left/Right**: Navigate between images
-- **D**: Toggle drawing mode
-- **Delete/Backspace**: Delete selected annotation
-- **Mouse Wheel**: Zoom in/out
-- **Click + Drag**: Pan image
+- Arrow Left/Right: navigate between images
+- D: toggle drawing mode
+- Delete/Backspace: delete selected annotation
+- Mouse Wheel: zoom in/out
+- Click + Drag: pan image
 
 ## Technology Stack
 
-- **Frontend**: React 19, TypeScript, Vite
-- **Backend**: Express.js, Node.js
-- **Styling**: Tailwind CSS
+- Frontend: React 19, TypeScript, Vite
+- Backend: Express.js, Node.js
+- Styling: Tailwind CSS

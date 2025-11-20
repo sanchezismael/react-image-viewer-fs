@@ -3,63 +3,120 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 
+const fsp = fs.promises;
 const app = express();
-const PORT = 3001;
 
-// Security Constants
+const PORT = Number(process.env.PORT || 3001);
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'http://localhost:3000';
+const ALLOWED_ROOT = process.env.ALLOWED_ROOT ? path.resolve(process.env.ALLOWED_ROOT) : null;
+
 const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
 const ALLOWED_TEXT_EXTENSIONS = ['.txt', '.md', '.csv', '.log'];
 
-// Configurar CORS para permitir peticiones desde el frontend
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: ALLOWED_ORIGIN,
   credentials: true
 }));
 
-// Aumentar el límite de tamaño del payload para imágenes grandes
+// Aumentar el limite de tamano del payload para imagenes grandes
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+const isSubPath = (base, target) => {
+  const relative = path.relative(base, target);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+const normalizeAndValidatePath = (targetPath) => {
+  if (!targetPath || typeof targetPath !== 'string') {
+    const err = new Error('Path parameter is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  const resolved = path.resolve(targetPath);
+  if (ALLOWED_ROOT && !isSubPath(ALLOWED_ROOT, resolved)) {
+    const err = new Error('Path is outside the allowed root');
+    err.statusCode = 403;
+    throw err;
+  }
+  return resolved;
+};
+
+const ensureDirectory = async (candidatePath) => {
+  const resolved = normalizeAndValidatePath(candidatePath);
+  const stats = await fsp.stat(resolved).catch((error) => {
+    if (error.code === 'ENOENT') {
+      const err = new Error('Directory not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    throw error;
+  });
+  if (!stats.isDirectory()) {
+    const err = new Error('Path is not a directory');
+    err.statusCode = 400;
+    throw err;
+  }
+  return resolved;
+};
+
+const ensureFile = async (candidatePath, allowedExtensions) => {
+  const resolved = normalizeAndValidatePath(candidatePath);
+  const ext = path.extname(resolved).toLowerCase();
+  if (allowedExtensions && !allowedExtensions.includes(ext)) {
+    const err = new Error('Invalid file extension');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const stats = await fsp.stat(resolved).catch((error) => {
+    if (error.code === 'ENOENT') {
+      const err = new Error('File not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    throw error;
+  });
+
+  if (!stats.isFile()) {
+    const err = new Error('Path is not a file');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return { resolved, stats };
+};
+
+const handleError = (res, error, fallbackMessage) => {
+  const status = error.statusCode || 500;
+  const message = error.message || fallbackMessage;
+  if (status >= 500) {
+    console.error(message, error);
+  }
+  return res.status(status).json({ error: message });
+};
 
 /**
  * Endpoint para listar contenido de un directorio
  * GET /api/browse?path=C:/ruta/carpeta
  */
-app.get('/api/browse', (req, res) => {
+app.get('/api/browse', async (req, res) => {
   try {
-    const dirPath = req.query.path;
-    
-    if (!dirPath) {
-      return res.status(400).json({ error: 'Path parameter is required' });
-    }
+    const dirPath = await ensureDirectory(req.query.path);
+    const items = await fsp.readdir(dirPath, { withFileTypes: true });
 
-    // Seguridad b??sica: verificar que el path existe
-    if (!fs.existsSync(dirPath)) {
-      return res.status(404).json({ error: 'Directory not found' });
-    }
-
-    const stats = fs.statSync(dirPath);
-    if (!stats.isDirectory()) {
-      return res.status(400).json({ error: 'Path is not a directory' });
-    }
-
-    // Leer contenido del directorio
-    const items = fs.readdirSync(dirPath, { withFileTypes: true });
-    
-    const result = {
+    res.json({
       currentPath: dirPath,
       parent: path.dirname(dirPath),
-      items: items.map(item => ({
+      items: items.map((item) => ({
         name: item.name,
         path: path.join(dirPath, item.name),
         isDirectory: item.isDirectory(),
-        isFile: item.isFile()
-      }))
-    };
-
-    res.json(result);
+        isFile: item.isFile(),
+      })),
+    });
   } catch (error) {
-    console.error('Error browsing directory:', error);
-    res.status(500).json({ error: 'Failed to read directory', message: error.message });
+    handleError(res, error, 'Failed to read directory');
   }
 });
 
@@ -67,108 +124,83 @@ app.get('/api/browse', (req, res) => {
  * Endpoint para obtener archivos de imagen y JSON de una carpeta
  * GET /api/files?path=C:/ruta/carpeta
  */
-app.get('/api/files', (req, res) => {
+app.get('/api/files', async (req, res) => {
   try {
-    const dirPath = req.query.path;
-    
-    if (!dirPath) {
-      return res.status(400).json({ error: 'Path parameter is required' });
-    }
+    const dirPath = await ensureDirectory(req.query.path);
+    const items = await fsp.readdir(dirPath, { withFileTypes: true });
 
-    if (!fs.existsSync(dirPath)) {
-      return res.status(404).json({ error: 'Directory not found' });
-    }
-
-    const stats = fs.statSync(dirPath);
-    if (!stats.isDirectory()) {
-      return res.status(400).json({ error: 'Path is not a directory' });
-    }
-
-    // Leer todos los archivos
-    const items = fs.readdirSync(dirPath, { withFileTypes: true });
-    
-    // Filtrar im??genes (excluyendo m??scaras) y archivos JSON
-    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
     const images = [];
     const jsonFiles = [];
 
-    items.forEach(item => {
-      if (item.isFile()) {
-        const ext = path.extname(item.name).toLowerCase();
-        const fullPath = path.join(dirPath, item.name);
-        const fileStats = fs.statSync(fullPath);
-        
-        if (imageExtensions.includes(ext) && !item.name.endsWith('_mask.png')) {
-          images.push({
-            name: item.name,
-            path: fullPath,
-            url: `/api/image?path=${encodeURIComponent(fullPath)}`,
-            modifiedAt: fileStats.mtime.toISOString()
-          });
-        } else if (ext === '.json') {
-          jsonFiles.push({
-            name: item.name,
-            path: fullPath
-          });
-        }
-      }
-    });
+    const statPromises = [];
 
-    // Ordenar alfab??ticamente
+    for (const item of items) {
+      if (!item.isFile()) continue;
+      const ext = path.extname(item.name).toLowerCase();
+
+      const isImage = ALLOWED_IMAGE_EXTENSIONS.includes(ext) && !item.name.endsWith('_mask.png');
+      const isJson = ext === '.json';
+      if (!isImage && !isJson) continue;
+
+      const fullPath = path.join(dirPath, item.name);
+      statPromises.push(
+        (async () => {
+          const fileStats = await fsp.stat(fullPath);
+          if (isImage) {
+            images.push({
+              name: item.name,
+              path: fullPath,
+              url: `/api/image?path=${encodeURIComponent(fullPath)}`,
+              modifiedAt: fileStats.mtime.toISOString(),
+            });
+          } else if (isJson) {
+            jsonFiles.push({ name: item.name, path: fullPath });
+          }
+        })()
+      );
+    }
+
+    await Promise.all(statPromises);
+
     images.sort((a, b) => a.name.localeCompare(b.name));
     jsonFiles.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       path: dirPath,
       images,
-      jsonFiles
+      jsonFiles,
     });
   } catch (error) {
-    console.error('Error loading files:', error);
-    res.status(500).json({ error: 'Failed to load files', message: error.message });
+    handleError(res, error, 'Failed to load files');
   }
 });
 
 /**
- * Endpoint para servir una imagen espec??fica
+ * Endpoint para servir una imagen especifica
  * GET /api/image?path=C:/ruta/imagen.jpg
  */
-app.get('/api/image', (req, res) => {
+app.get('/api/image', async (req, res) => {
   try {
-    const imagePath = req.query.path;
-    
-    if (!imagePath) {
-      return res.status(400).json({ error: 'Path parameter is required' });
-    }
+    const { resolved } = await ensureFile(req.query.path, ALLOWED_IMAGE_EXTENSIONS);
 
-    if (!fs.existsSync(imagePath)) {
-      return res.status(404).json({ error: 'Image not found' });
-    }
-
-    const stats = fs.statSync(imagePath);
-    if (!stats.isFile()) {
-      return res.status(400).json({ error: 'Path is not a file' });
-    }
-
-    // Servir el archivo con el content-type apropiado
-    const ext = path.extname(imagePath).toLowerCase();
+    const ext = path.extname(resolved).toLowerCase();
     const contentTypes = {
       '.jpg': 'image/jpeg',
       '.jpeg': 'image/jpeg',
       '.png': 'image/png',
       '.gif': 'image/gif',
       '.bmp': 'image/bmp',
-      '.webp': 'image/webp'
+      '.webp': 'image/webp',
     };
 
     res.setHeader('Content-Type', contentTypes[ext] || 'application/octet-stream');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    
-    const fileStream = fs.createReadStream(imagePath);
+
+    const fileStream = fs.createReadStream(resolved);
+    fileStream.on('error', (error) => handleError(res, error, 'Failed to serve image'));
     fileStream.pipe(res);
   } catch (error) {
-    console.error('Error serving image:', error);
-    res.status(500).json({ error: 'Failed to serve image', message: error.message });
+    handleError(res, error, 'Failed to serve image');
   }
 });
 
@@ -176,25 +208,18 @@ app.get('/api/image', (req, res) => {
  * Endpoint para leer el contenido de un archivo JSON
  * GET /api/json?path=C:/ruta/archivo.json
  */
-app.get('/api/json', (req, res) => {
+app.get('/api/json', async (req, res) => {
   try {
-    const jsonPath = req.query.path;
-    
-    if (!jsonPath) {
-      return res.status(400).json({ error: 'Path parameter is required' });
-    }
-
-    if (!fs.existsSync(jsonPath)) {
-      return res.status(404).json({ error: 'JSON file not found' });
-    }
-
-    const content = fs.readFileSync(jsonPath, 'utf-8');
+    const { resolved } = await ensureFile(req.query.path, ['.json']);
+    const content = await fsp.readFile(resolved, 'utf-8');
     const data = JSON.parse(content);
-    
     res.json(data);
   } catch (error) {
-    console.error('Error reading JSON:', error);
-    res.status(500).json({ error: 'Failed to read JSON file', message: error.message });
+    if (error instanceof SyntaxError) {
+      error.statusCode = 400;
+      error.message = 'Invalid JSON file';
+    }
+    handleError(res, error, 'Failed to read JSON file');
   }
 });
 
@@ -203,61 +228,57 @@ app.get('/api/json', (req, res) => {
  * POST /api/save-json
  * Body: { path: string, data: object }
  */
-app.post('/api/save-json', (req, res) => {
+app.post('/api/save-json', async (req, res) => {
   try {
     const { path: filePath, data } = req.body;
-    
-    if (!filePath || !data) {
+
+    if (!filePath || data === undefined) {
       return res.status(400).json({ error: 'Path and data are required' });
     }
 
-    // Security Check
-    if (path.extname(filePath).toLowerCase() !== '.json') {
+    const resolved = normalizeAndValidatePath(filePath);
+    if (path.extname(resolved).toLowerCase() !== '.json') {
       return res.status(400).json({ error: 'Invalid file extension. Only .json allowed.' });
     }
 
     const jsonString = JSON.stringify(data, null, 2);
-    const dirName = path.dirname(filePath);
-    fs.mkdirSync(dirName, { recursive: true });
-    fs.writeFileSync(filePath, jsonString, 'utf-8');
-    
+    await fsp.mkdir(path.dirname(resolved), { recursive: true });
+    await fsp.writeFile(resolved, jsonString, 'utf-8');
+
     res.json({ success: true, message: 'JSON file saved successfully' });
   } catch (error) {
-    console.error('Error saving JSON:', error);
-    res.status(500).json({ error: 'Failed to save JSON file', message: error.message });
+    handleError(res, error, 'Failed to save JSON file');
   }
 });
 
 /**
- * Endpoint para guardar una imagen (m??scara)
+ * Endpoint para guardar una imagen (mascara)
  * POST /api/save-image
  * Body: { path: string, base64: string }
  */
-app.post('/api/save-image', (req, res) => {
+app.post('/api/save-image', async (req, res) => {
   try {
     const { path: filePath, base64 } = req.body;
-    
+
     if (!filePath || !base64) {
       return res.status(400).json({ error: 'Path and base64 data are required' });
     }
 
-    // Security Check
-    const ext = path.extname(filePath).toLowerCase();
+    const resolved = normalizeAndValidatePath(filePath);
+    const ext = path.extname(resolved).toLowerCase();
     if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
       return res.status(400).json({ error: 'Invalid file extension. Only images allowed.' });
     }
 
-    // Extraer datos base64 (remover prefijo data:image/png;base64,)
     const base64Data = base64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    const dirName = path.dirname(filePath);
-    fs.mkdirSync(dirName, { recursive: true });
-    fs.writeFileSync(filePath, buffer);
-    
+
+    await fsp.mkdir(path.dirname(resolved), { recursive: true });
+    await fsp.writeFile(resolved, buffer);
+
     res.json({ success: true, message: 'Image saved successfully' });
   } catch (error) {
-    console.error('Error saving image:', error);
-    res.status(500).json({ error: 'Failed to save image', message: error.message });
+    handleError(res, error, 'Failed to save image');
   }
 });
 
@@ -266,23 +287,13 @@ app.post('/api/save-image', (req, res) => {
  * GET /api/text
  * Query: { path: string }
  */
-app.get('/api/text', (req, res) => {
+app.get('/api/text', async (req, res) => {
   try {
-    const filePath = req.query.path;
-
-    if (!filePath) {
-      return res.status(400).json({ error: 'Path parameter is required' });
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    const content = fs.readFileSync(filePath, 'utf-8');
+    const { resolved } = await ensureFile(req.query.path, ALLOWED_TEXT_EXTENSIONS);
+    const content = await fsp.readFile(resolved, 'utf-8');
     res.json({ content });
   } catch (error) {
-    console.error('Error reading text file:', error);
-    res.status(500).json({ error: 'Failed to read text file', message: error.message });
+    handleError(res, error, 'Failed to read text file');
   }
 });
 
@@ -291,7 +302,7 @@ app.get('/api/text', (req, res) => {
  * POST /api/save-text
  * Body: { path: string, content: string }
  */
-app.post('/api/save-text', (req, res) => {
+app.post('/api/save-text', async (req, res) => {
   try {
     const { path: filePath, content } = req.body;
 
@@ -299,20 +310,18 @@ app.post('/api/save-text', (req, res) => {
       return res.status(400).json({ error: 'Path and content are required' });
     }
 
-    // Security Check
-    const ext = path.extname(filePath).toLowerCase();
+    const resolved = normalizeAndValidatePath(filePath);
+    const ext = path.extname(resolved).toLowerCase();
     if (!ALLOWED_TEXT_EXTENSIONS.includes(ext)) {
       return res.status(400).json({ error: 'Invalid file extension. Only text files allowed.' });
     }
 
-    const dirName = path.dirname(filePath);
-    fs.mkdirSync(dirName, { recursive: true });
-    fs.writeFileSync(filePath, content, 'utf-8');
+    await fsp.mkdir(path.dirname(resolved), { recursive: true });
+    await fsp.writeFile(resolved, content, 'utf-8');
 
     res.json({ success: true, message: 'Text file saved successfully' });
   } catch (error) {
-    console.error('Error saving text file:', error);
-    res.status(500).json({ error: 'Failed to save text file', message: error.message });
+    handleError(res, error, 'Failed to save text file');
   }
 });
 
@@ -321,7 +330,7 @@ app.post('/api/save-text', (req, res) => {
  * POST /api/delete-image
  * Body: { imagePath: string, annotationPath?: string, maskPath?: string }
  */
-app.post('/api/delete-image', (req, res) => {
+app.post('/api/delete-image', async (req, res) => {
   try {
     const { imagePath, annotationPath, maskPath } = req.body;
 
@@ -329,88 +338,92 @@ app.post('/api/delete-image', (req, res) => {
       return res.status(400).json({ error: 'imagePath is required' });
     }
 
-    // Security Check
-    const ext = path.extname(imagePath).toLowerCase();
-    if (!ALLOWED_IMAGE_EXTENSIONS.includes(ext)) {
-      return res.status(400).json({ error: 'Invalid file type. Can only delete images.' });
-    }
+    const { resolved: resolvedImage } = await ensureFile(imagePath, ALLOWED_IMAGE_EXTENSIONS);
 
-    if (!fs.existsSync(imagePath) || !fs.statSync(imagePath).isFile()) {
-      return res.status(404).json({ error: 'Image file not found' });
-    }
-
-    fs.unlinkSync(imagePath);
-
-    const deleteIfPossible = (targetPath) => {
-      if (!targetPath) {
-        return false;
+    const deleteIfPossible = async (candidatePath) => {
+      if (!candidatePath) return false;
+      try {
+        const { resolved } = await ensureFile(candidatePath);
+        await fsp.unlink(resolved);
+        return true;
+      } catch (error) {
+        if (error.statusCode === 404) return false;
+        throw error;
       }
-      if (fs.existsSync(targetPath)) {
-        const stats = fs.statSync(targetPath);
-        if (stats.isFile()) {
-          fs.unlinkSync(targetPath);
-          return true;
-        }
-      }
-      return false;
     };
+
+    await fsp.unlink(resolvedImage);
 
     const deleted = {
       image: true,
-      annotation: deleteIfPossible(annotationPath),
-      mask: deleteIfPossible(maskPath)
+      annotation: await deleteIfPossible(annotationPath),
+      mask: await deleteIfPossible(maskPath),
     };
 
     res.json({ success: true, deleted });
   } catch (error) {
-    console.error('Error deleting image:', error);
-    res.status(500).json({ error: 'Failed to delete image', message: error.message });
+    handleError(res, error, 'Failed to delete image');
   }
 });
 
 /**
  * Endpoint para obtener drives/discos disponibles (Windows)
  */
-app.get('/api/drives', (req, res) => {
+app.get('/api/drives', async (req, res) => {
   try {
     if (process.platform === 'win32') {
-      // En Windows, listar drives disponibles
-      const drives = [];
-      const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-      
-      for (const letter of letters) {
-        const drivePath = `${letter}:\\`;
-        try {
-          if (fs.existsSync(drivePath)) {
-            drives.push({
+      const TIMEOUT_MS = 200; // fails fast on slow/unmounted drives
+      const letters = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+      // Cachea durante 30s para evitar escaneos repetidos si se abre varias veces el modal
+      if (!app.locals.drivesCache) {
+        app.locals.drivesCache = { ts: 0, data: [] };
+      }
+      const cacheAge = Date.now() - app.locals.drivesCache.ts;
+      if (cacheAge < 30_000 && app.locals.drivesCache.data.length > 0) {
+        return res.json({ drives: app.locals.drivesCache.data });
+      }
+
+      const withTimeout = (promise, ms) =>
+        Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+        ]);
+
+      const driveChecks = await Promise.all(
+        letters.map(async (letter) => {
+          const drivePath = `${letter}:\\`;
+          try {
+            await withTimeout(fsp.access(drivePath), TIMEOUT_MS);
+            return {
               name: `${letter}:`,
               path: drivePath,
-              isDirectory: true
-            });
+              isDirectory: true,
+            };
+          } catch {
+            return null;
           }
-        } catch (e) {
-          // Drive no accesible, continuar
-        }
-      }
-      
-      res.json({ drives });
-    } else {
-      // En Linux/Mac, empezar desde home o root
-      res.json({
-        drives: [
-          { name: 'Home', path: require('os').homedir(), isDirectory: true },
-          { name: 'Root', path: '/', isDirectory: true }
-        ]
-      });
+        })
+      );
+
+      const drives = driveChecks.filter(Boolean);
+      app.locals.drivesCache = { ts: Date.now(), data: drives };
+      return res.json({ drives });
     }
+
+    res.json({
+      drives: [
+        { name: 'Home', path: require('os').homedir(), isDirectory: true },
+        { name: 'Root', path: '/', isDirectory: true },
+      ],
+    });
   } catch (error) {
-    console.error('Error listing drives:', error);
-    res.status(500).json({ error: 'Failed to list drives', message: error.message });
+    handleError(res, error, 'Failed to list drives');
   }
 });
 
 // Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`\n???? Backend server running on http://localhost:${PORT}`);
-  console.log(`???? File system API ready\n`);
+  console.log(`Backend server running on http://localhost:${PORT}`);
+  console.log('File system API ready');
 });

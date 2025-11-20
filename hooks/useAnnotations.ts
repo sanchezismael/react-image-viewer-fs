@@ -1,7 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import { Annotation, AnnotationClass, AnnotationStats } from '../App';
-import { saveJsonFile } from '../utils/api';
-import { joinPathSegments } from '../utils/helpers';
 
 export interface AnnotationsState {
   annotationClasses: AnnotationClass[];

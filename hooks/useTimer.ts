@@ -23,7 +23,7 @@ export interface TimerActions {
   clearTimers: () => void;
 }
 
-export const useTimer = (currentIndex: number, isCompleted: boolean): TimerState & TimerActions => {
+export const useTimer = (currentIndex: number, isCompleted: boolean, restartKey: number = 0): TimerState & TimerActions => {
   const [annotationTime, setAnnotationTime] = useState(0);
   const [allAnnotationTimes, setAllAnnotationTimes] = useState<Record<number, number>>({});
   const timerRef = useRef<number | null>(null);
@@ -112,8 +112,9 @@ export const useTimer = (currentIndex: number, isCompleted: boolean): TimerState
 
   // Main timer loop
   useEffect(() => {
+    clearTimers();
+
     if (isCompleted) {
-      clearTimers();
       return;
     }
 
@@ -130,7 +131,7 @@ export const useTimer = (currentIndex: number, isCompleted: boolean): TimerState
     resetInactivityTimer();
 
     return () => clearTimers();
-  }, [isCompleted, resetInactivityTimer, clearTimers]);
+  }, [isCompleted, resetInactivityTimer, clearTimers, restartKey]);
 
   const resetTimersForNewImage = useCallback((nextIndex: number, times: Record<number, number>, activeTimes: Record<number, number>, nextIsCompleted: boolean) => {
       const nextAnnotationTime = times[nextIndex] || 0;

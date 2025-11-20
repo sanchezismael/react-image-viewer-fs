@@ -56,21 +56,34 @@ export interface DeleteImageResponse {
   };
 }
 
+let drivesCache: Drive[] | null = null;
+let drivesPromise: Promise<Drive[]> | null = null;
+
 /**
- * Obtener lista de drives disponibles
+ * Obtener lista de drives disponibles (cacheada para evitar llamadas duplicadas en dev/StrictMode)
  */
 export async function getDrives(): Promise<Drive[]> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/drives`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch drives: ${response.statusText}`);
+  if (drivesCache) return drivesCache;
+  if (drivesPromise) return drivesPromise;
+
+  drivesPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/drives`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch drives: ${response.statusText}`);
+      }
+      const data: DrivesResponse = await response.json();
+      drivesCache = data.drives;
+      return data.drives;
+    } catch (error) {
+      console.error('Error fetching drives:', error);
+      // limpiar para reintento en futuras llamadas
+      drivesPromise = null;
+      throw error;
     }
-    const data: DrivesResponse = await response.json();
-    return data.drives;
-  } catch (error) {
-    console.error('Error fetching drives:', error);
-    throw error;
-  }
+  })();
+
+  return drivesPromise;
 }
 
 /**
