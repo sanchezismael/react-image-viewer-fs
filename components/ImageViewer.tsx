@@ -53,6 +53,8 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isHoveringImage, setIsHoveringImage] = useState(false);
+  const isRefining = useRef(false);
+  const lastRefineTs = useRef(0);
 
   const colorMap = useRef(new Map<string, string>());
   useEffect(() => {
@@ -209,12 +211,26 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
   const handleMouseDown = (e: React.MouseEvent) => {
     onActivity();
+    if (refineMode) {
+      isRefining.current = true;
+      lastRefineTs.current = 0;
+      onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+      return;
+    }
     if (isDrawingMode) handleDrawStart(e.clientX, e.clientY);
     else handlePanMouseDown(e);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     onActivity();
+    if (refineMode) {
+      if (e.touches.length === 1) {
+        isRefining.current = true;
+        lastRefineTs.current = 0;
+        onRefineRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false);
+      }
+      return;
+    }
     if (isDrawingMode) {
       if (e.touches.length === 1) handleDrawStart(e.touches[0].clientX, e.touches[0].clientY);
     } else {
@@ -223,10 +239,34 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   };
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => handleDrawMove(e.clientX, e.clientY);
-    const handleTouchMove = (e: TouchEvent) => { if (e.touches.length === 1) handleDrawMove(e.touches[0].clientX, e.touches[0].clientY); };
+    const handleMouseMove = (e: MouseEvent) => {
+      if (refineMode && isRefining.current) {
+        const now = performance.now();
+        if (now - lastRefineTs.current > 40) {
+          onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+          lastRefineTs.current = now;
+        }
+        return;
+      }
+      handleDrawMove(e.clientX, e.clientY);
+    };
 
-    if (isDrawing) {
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        if (refineMode && isRefining.current) {
+          const touch = e.touches[0];
+          const now = performance.now();
+          if (now - lastRefineTs.current > 60) {
+            onRefineRequest(getTransformedPoint(touch.clientX, touch.clientY), false);
+            lastRefineTs.current = now;
+          }
+          return;
+        }
+        handleDrawMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    if (isDrawing || (refineMode && isRefining.current)) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleDrawEnd);
       window.addEventListener('touchmove', handleTouchMove);
@@ -239,10 +279,18 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleDrawEnd);
     };
-  }, [isDrawing, handleDrawMove, handleDrawEnd]);
+  }, [isDrawing, handleDrawMove, handleDrawEnd, refineMode, onRefineRequest, getTransformedPoint]);
 
   const handleViewerMouseMove = (e: React.MouseEvent) => {
     onActivity();
+    if (refineMode && isRefining.current) {
+      const now = performance.now();
+      if (now - lastRefineTs.current > 40) {
+        onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+        lastRefineTs.current = now;
+      }
+      return;
+    }
     if (isDrawingMode && imageDimensions) {
         const point = getTransformedPoint(e.clientX, e.clientY);
         if (point.x >= 0 && point.x <= imageDimensions.width && point.y >= 0 && point.y <= imageDimensions.height) {
