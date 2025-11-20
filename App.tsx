@@ -6,6 +6,7 @@ import DashboardModal from './components/DashboardModal';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import Confetti from './components/Confetti';
 import RocketLaunchAnimation from './components/RocketLaunchAnimation';
+import RefineOverlay from './components/RefineOverlay';
 import { TransformState } from './hooks/useImageTransform';
 import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, deleteImageAssets } from './utils/api';
 import { DashboardEntry } from './types/dashboard';
@@ -162,6 +163,7 @@ const App: React.FC = () => {
   const dashboardEntriesRef = useRef<DashboardEntry[]>([]);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [refineRadius, setRefineRadius] = useState<number>(6);
+  const [refineMode, setRefineMode] = useState<boolean>(false);
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
@@ -919,6 +921,24 @@ const App: React.FC = () => {
     morphAnnotation(selectedAnnotationId, refineRadius, mode);
   }, [selectedAnnotationId, refineRadius, morphAnnotation]);
 
+  const handleRefineAtPoint = useCallback((point: Point, erode: boolean) => {
+    const anns = allAnnotations[currentIndex] || [];
+    let targetId = selectedAnnotationId || null;
+    if (!targetId) {
+      for (let i = anns.length - 1; i >= 0; i--) {
+        if (isPointInPolygon(point, anns[i].points)) {
+          targetId = anns[i].id;
+          break;
+        }
+      }
+    }
+    if (!targetId) {
+      toast.error('Select an annotation to refine or click inside one.');
+      return;
+    }
+    morphAnnotation(targetId, refineRadius, erode ? 'erode' : 'dilate');
+  }, [allAnnotations, currentIndex, morphAnnotation, refineRadius, selectedAnnotationId]);
+
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
   const handleToggleDrawingMode = useCallback(() => {
@@ -1240,7 +1260,6 @@ const App: React.FC = () => {
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}
           onDeleteAnnotation={handleDeleteAnnotationWrapper}
-          onMorphAnnotation={handleMorphAnnotation}
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
           onDeleteCurrentImage={handleDeleteCurrentImage}
@@ -1254,6 +1273,14 @@ const App: React.FC = () => {
       )}
       
       <main className="flex-1 h-full flex items-center justify-center relative p-8">
+        {hasImages && (
+          <RefineOverlay
+            enabled={refineMode}
+            radius={refineRadius}
+            onToggle={() => setRefineMode((v) => !v)}
+            onRadiusChange={setRefineRadius}
+          />
+        )}
         {hasImages && imageDimensions && currentImageUrl ? (
           <ImageViewer
             ref={imageViewerRef}
@@ -1271,6 +1298,8 @@ const App: React.FC = () => {
             onActivity={resetInactivityTimer}
             startActiveTimer={startActiveTimer}
             stopActiveTimer={stopActiveTimer}
+            refineMode={refineMode}
+            onRefineRequest={handleRefineAtPoint}
           />
         ) : (
           <div className="text-center p-8">

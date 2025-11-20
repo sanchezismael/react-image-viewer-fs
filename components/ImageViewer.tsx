@@ -23,6 +23,8 @@ interface ImageViewerProps {
   onActivity: () => void;
   startActiveTimer: () => void;
   stopActiveTimer: () => void;
+  refineMode: boolean;
+  onRefineRequest: (point: Point, erode: boolean) => void;
 }
 
 const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
@@ -41,7 +43,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   { 
     src, onTransformChange, isDrawingMode, annotations, annotationClasses, 
     selectedAnnotationClass, selectedAnnotationId, onAddAnnotation, onSelectAnnotation, imageDimensions, onActivity,
-    startActiveTimer, stopActiveTimer
+    startActiveTimer, stopActiveTimer, refineMode, onRefineRequest
   },
   ref
 ) => {
@@ -188,6 +190,11 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   }, [isDrawing, currentPath, selectedAnnotationClass, onAddAnnotation, stopActiveTimer]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
+    if (refineMode) {
+      const point = getTransformedPoint(e.clientX, e.clientY);
+      onRefineRequest(point, e.shiftKey);
+      return;
+    }
     if (isDrawingMode || e.defaultPrevented) return;
     const point = getTransformedPoint(e.clientX, e.clientY);
     let foundId: string | null = null;
