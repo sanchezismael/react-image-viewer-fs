@@ -164,6 +164,10 @@ const App: React.FC = () => {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [refineRadius, setRefineRadius] = useState<number>(6);
   const [refineMode, setRefineMode] = useState<boolean>(false);
+  const [lastDirectory, setLastDirectory] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('lastDirectory') || '';
+  });
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
@@ -399,6 +403,10 @@ const App: React.FC = () => {
 
       const filesData = await getFiles(dirPath);
       setCurrentDirectory(dirPath);
+      setLastDirectory(dirPath);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('lastDirectory', dirPath);
+      }
       setImageFiles(filesData.images);
       const defaultPaths = getDefaultOutputPaths(dirPath);
       // Note: loadPersistedOutputPaths logic moved inline or needs to be extracted
@@ -1211,6 +1219,7 @@ const App: React.FC = () => {
         <DirectoryBrowser
           onSelectDirectory={handleDirectorySelect}
           onClose={() => setShowDirectoryBrowser(false)}
+          initialPath={lastDirectory}
         />
       )}
 

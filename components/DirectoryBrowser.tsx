@@ -5,9 +5,10 @@ import { FolderIcon, ChevronRightIcon, HardDriveIcon, SpinnerIcon, HomeIcon } fr
 interface DirectoryBrowserProps {
   onSelectDirectory: (path: string) => void;
   onClose: () => void;
+  initialPath?: string;
 }
 
-const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, onClose }) => {
+const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, onClose, initialPath }) => {
   const [drives, setDrives] = useState<Drive[]>([]);
   const [currentPath, setCurrentPath] = useState<string>('');
   const [items, setItems] = useState<DirectoryItem[]>([]);
@@ -15,10 +16,23 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
   const [error, setError] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<string[]>([]);
 
-  // Cargar drives al montar el componente
   useEffect(() => {
-    loadDrives();
-  }, []);
+    const loadInitial = async () => {
+      if (initialPath) {
+        setLoading(true);
+        try {
+          await navigateToPath(initialPath);
+          return;
+        } catch (err) {
+          // fallback to drives
+        } finally {
+          setLoading(false);
+        }
+      }
+      loadDrives();
+    };
+    void loadInitial();
+  }, [initialPath]);
 
   const loadDrives = async () => {
     setLoading(true);
