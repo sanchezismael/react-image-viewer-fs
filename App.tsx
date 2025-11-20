@@ -591,7 +591,7 @@ const App: React.FC = () => {
           operations.push(saveJsonFile(jsonPath, exportData));
         }
 
-        if (maskPath && currentAnns.some(ann => ann.points.length >= 3)) {
+        if (maskPath) {
           const dims = imageDimensions || allImageDimensions[currentIndex];
           if (dims) {
             if (!maskCanvasRef.current) {
