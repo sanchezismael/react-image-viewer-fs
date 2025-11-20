@@ -49,6 +49,7 @@ interface ToolbarProps {
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
   onResizeAnnotation: (id: string, deltaPercent: number) => void;
+  onMorphAnnotation: (mode: 'dilate' | 'erode') => void;
   onSaveAll: () => void | Promise<void>;
   onMarkAsComplete: () => void;
   onDeleteCurrentImage: () => void;
@@ -113,7 +114,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   images, currentIndex, transform, isDrawingMode, annotations, annotationClasses, selectedAnnotationClass,
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, totalProjectTime, totalActiveProjectTime, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
-  onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation, onResizeAnnotation,
+  onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation, onResizeAnnotation, onMorphAnnotation,
   onSaveAll, onMarkAsComplete, onDeleteCurrentImage, onOpenDashboard, isSaving, isDeletingImage, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
@@ -461,6 +462,22 @@ const Toolbar: React.FC<ToolbarProps> = ({
                 className="flex-1 px-2 py-1 rounded-md bg-slate-800 text-white font-semibold hover:bg-slate-700 text-sm"
               >
                 Expand
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onMorphAnnotation('erode')}
+                className="flex-1 px-2 py-1 rounded-md bg-slate-900 text-white font-semibold hover:bg-slate-800 text-sm"
+                title="Erode mask by blur radius"
+              >
+                Erode (radius)
+              </button>
+              <button
+                onClick={() => onMorphAnnotation('dilate')}
+                className="flex-1 px-2 py-1 rounded-md bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm"
+                title="Dilate mask by blur radius"
+              >
+                Dilate (radius)
               </button>
             </div>
           </div>

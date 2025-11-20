@@ -161,6 +161,7 @@ const App: React.FC = () => {
   const [dashboardEntries, setDashboardEntries] = useState<DashboardEntry[]>([]);
   const dashboardEntriesRef = useRef<DashboardEntry[]>([]);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [refineRadius, setRefineRadius] = useState<number>(6);
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
@@ -750,6 +751,174 @@ const App: React.FC = () => {
     }));
   }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
 
+  const handleMorphAnnotation = useCallback((mode: 'dilate' | 'erode') => {
+    if (!selectedAnnotationId) return;
+    morphAnnotation(selectedAnnotationId, refineRadius, mode);
+  }, [selectedAnnotationId, refineRadius, morphAnnotation]);
+
+  const simplifyPath = (points: Point[], tolerance = 1): Point[] => {
+    if (points.length <= 2) return points;
+    const sqTolerance = tolerance * tolerance;
+    const sqDist = (p1: Point, p2: Point) => {
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      return dx * dx + dy * dy;
+    };
+
+    const simplifyDPStep = (pts: Point[], first: number, last: number, simplified: Point[]) => {
+      let maxSqDist = sqTolerance;
+      let index = -1;
+      const line = { p1: pts[first], p2: pts[last] };
+
+      for (let i = first + 1; i < last; i++) {
+        const t = ((pts[i].x - line.p1.x) * (line.p2.x - line.p1.x) + (pts[i].y - line.p1.y) * (line.p2.y - line.p1.y)) /
+          (sqDist(line.p1, line.p2) || 1);
+        const proj = {
+          x: line.p1.x + (line.p2.x - line.p1.x) * t,
+          y: line.p1.y + (line.p2.y - line.p1.y) * t
+        };
+        const d = sqDist(pts[i], proj);
+        if (d > maxSqDist) {
+          index = i;
+          maxSqDist = d;
+        }
+      }
+
+      if (index >= 0) {
+        if (index - first > 1) simplifyDPStep(pts, first, index, simplified);
+        simplified.push(pts[index]);
+        if (last - index > 1) simplifyDPStep(pts, index, last, simplified);
+      }
+    };
+
+    const simplified: Point[] = [points[0]];
+    simplifyDPStep(points, 0, points.length - 1, simplified);
+    simplified.push(points[points.length - 1]);
+    return simplified;
+  };
+
+  const morphAnnotation = useCallback((id: string, radiusPx: number, mode: 'dilate' | 'erode') => {
+    const anns = allAnnotations[currentIndex] || [];
+    const target = anns.find(a => a.id === id);
+    const bounds = imageDimensions || allImageDimensions[currentIndex];
+    if (!target || !bounds) return;
+    if (radiusPx <= 0) return;
+
+    const xs = target.points.map(p => p.x);
+    const ys = target.points.map(p => p.y);
+    const minX = Math.max(0, Math.min(...xs) - radiusPx - 2);
+    const minY = Math.max(0, Math.min(...ys) - radiusPx - 2);
+    const maxX = Math.min(bounds.width, Math.max(...xs) + radiusPx + 2);
+    const maxY = Math.min(bounds.height, Math.max(...ys) + radiusPx + 2);
+    const w = Math.ceil(maxX - minX);
+    const h = Math.ceil(maxY - minY);
+    if (w <= 2 || h <= 2) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(-minX, -minY);
+    ctx.beginPath();
+    ctx.moveTo(target.points[0].x, target.points[0].y);
+    for (let i = 1; i < target.points.length; i++) {
+      ctx.lineTo(target.points[i].x, target.points[i].y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.restore();
+
+    const applyBlurThreshold = (invert = false) => {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.filter = `blur(${radiusPx}px)`;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.filter = 'none';
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        data[i + 3] = invert ? 255 - data[i] : data[i];
+        data[i] = data[i + 1] = data[i + 2] = data[i + 3] > 10 ? 255 : 0;
+      }
+      ctx.putImageData(imageData, 0, 0);
+    };
+
+    if (mode === 'dilate') {
+      applyBlurThreshold(false);
+    } else {
+      // erode: invert -> blur -> threshold -> invert
+      ctx.globalCompositeOperation = 'source-over';
+      const img = ctx.getImageData(0, 0, w, h);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const val = img.data[i] > 0 ? 0 : 255;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = val;
+        img.data[i + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      applyBlurThreshold(true);
+    }
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const mask = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        mask[y * w + x] = imageData.data[idx] > 0 ? 1 : 0;
+      }
+    }
+
+    // contour extraction (simple boundary trace)
+    const neighbors = [
+      [1, 0], [1, 1], [0, 1], [-1, 1],
+      [-1, 0], [-1, -1], [0, -1], [1, -1],
+    ];
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x];
+    let start: [number, number] | null = null;
+    for (let y = 0; y < h && !start; y++) {
+      for (let x = 0; x < w; x++) {
+        if (inside(x, y)) {
+          start = [x, y];
+          break;
+        }
+      }
+    }
+    if (!start) return;
+
+    let contour: Point[] = [];
+    let current = start;
+    let prevDir = 0;
+    const maxSteps = w * h * 4;
+    for (let step = 0; step < maxSteps; step++) {
+      contour.push({ x: current[0] + minX, y: current[1] + minY });
+      let found = false;
+      for (let i = 0; i < 8; i++) {
+        const dir = (prevDir + 6 + i) % 8;
+        const nx = current[0] + neighbors[dir][0];
+        const ny = current[1] + neighbors[dir][1];
+        if (inside(nx, ny)) {
+          current = [nx, ny];
+          prevDir = dir;
+          found = true;
+          break;
+        }
+      }
+      if (!found || (current[0] === start[0] && current[1] === start[1] && contour.length > 10)) {
+        break;
+      }
+    }
+
+    contour = simplifyPath(contour, 1.5);
+    setAllAnnotations(prev => ({
+      ...prev,
+      [currentIndex]: anns.map(a => a.id === id ? { ...a, points: contour } : a)
+    }));
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
+
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
   const handleToggleDrawingMode = useCallback(() => {
@@ -1071,6 +1240,7 @@ const App: React.FC = () => {
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}
           onDeleteAnnotation={handleDeleteAnnotationWrapper}
+          onMorphAnnotation={handleMorphAnnotation}
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
           onDeleteCurrentImage={handleDeleteCurrentImage}
