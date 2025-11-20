@@ -435,50 +435,53 @@ const Toolbar: React.FC<ToolbarProps> = ({
           )}
         </div>
         {selectedAnnotationId && (
-          <div className="mt-2 p-2 bg-white/5 border border-white/10 rounded-md text-xs text-gray-200 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-white/80">Refine size</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  className="w-16 bg-slate-900/70 border border-white/10 text-white rounded px-2 py-1 focus:ring-1 focus:ring-indigo-400 focus:outline-none"
-                  value={refineDelta}
-                  min={1}
-                  max={50}
-                  onChange={(e) => setRefineDelta(e.target.value)}
-                />
-                <span className="text-white/50">%</span>
+          <div className="mt-3">
+            <div className="sticky bottom-4 z-20">
+              <div className="rounded-xl border border-white/10 bg-slate-900/90 p-3 shadow-2xl">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-white/80 text-sm">Refine size</span>
+                  <label className="flex items-center gap-1 text-gray-300 text-xs">
+                    <input
+                      aria-label="Refine percentage"
+                      type="number"
+                      className="w-16 bg-slate-800 border border-white/10 text-white rounded px-2 py-1 focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+                      value={refineDelta}
+                      min={1}
+                      max={50}
+                      onChange={(e) => setRefineDelta(e.target.value)}
+                    />
+                    <span className="text-white/50">%</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onResizeAnnotation(selectedAnnotationId, -(Math.max(1, Math.min(50, parseFloat(refineDelta) || 5))))}
+                    className="w-full px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  >
+                    Contract
+                  </button>
+                  <button
+                    onClick={() => onResizeAnnotation(selectedAnnotationId, Math.max(1, Math.min(50, parseFloat(refineDelta) || 5)))}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-800 text-white font-semibold hover:bg-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  >
+                    Expand
+                  </button>
+                  <button
+                    onClick={() => onMorphAnnotation('erode')}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    title="Erode mask by blur radius"
+                  >
+                    Erode (radius)
+                  </button>
+                  <button
+                    onClick={() => onMorphAnnotation('dilate')}
+                    className="w-full px-3 py-2 rounded-lg bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    title="Dilate mask by blur radius"
+                  >
+                    Dilate (radius)
+                  </button>
+                </div>
               </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => onResizeAnnotation(selectedAnnotationId, -(Math.max(1, Math.min(50, parseFloat(refineDelta) || 5))))}
-                className="flex-1 px-2 py-1 rounded-md bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm"
-              >
-                Contract
-              </button>
-              <button
-                onClick={() => onResizeAnnotation(selectedAnnotationId, Math.max(1, Math.min(50, parseFloat(refineDelta) || 5)))}
-                className="flex-1 px-2 py-1 rounded-md bg-slate-800 text-white font-semibold hover:bg-slate-700 text-sm"
-              >
-                Expand
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => onMorphAnnotation('erode')}
-                className="flex-1 px-2 py-1 rounded-md bg-slate-900 text-white font-semibold hover:bg-slate-800 text-sm"
-                title="Erode mask by blur radius"
-              >
-                Erode (radius)
-              </button>
-              <button
-                onClick={() => onMorphAnnotation('dilate')}
-                className="flex-1 px-2 py-1 rounded-md bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm"
-                title="Dilate mask by blur radius"
-              >
-                Dilate (radius)
-              </button>
             </div>
           </div>
         )}
