@@ -48,6 +48,7 @@ interface ToolbarProps {
   onSelectAnnotationClass: (className: string) => void;
   onSelectAnnotation: (id: string | null) => void;
   onDeleteAnnotation: (id: string) => void;
+  onResizeAnnotation: (id: string, deltaPercent: number) => void;
   onSaveAll: () => void | Promise<void>;
   onMarkAsComplete: () => void;
   onDeleteCurrentImage: () => void;
@@ -112,13 +113,14 @@ const Toolbar: React.FC<ToolbarProps> = ({
   images, currentIndex, transform, isDrawingMode, annotations, annotationClasses, selectedAnnotationClass,
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, totalProjectTime, totalActiveProjectTime, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
-  onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
+  onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation, onResizeAnnotation,
   onSaveAll, onMarkAsComplete, onDeleteCurrentImage, onOpenDashboard, isSaving, isDeletingImage, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
   const [newClassName, setNewClassName] = useState('');
   const [newClassId, setNewClassId] = useState('');
   const [jumpToValue, setJumpToValue] = useState('');
+  const [refineDelta, setRefineDelta] = useState('5');
 
   const formatTime = (totalSeconds: number): string => {
     const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -408,13 +410,61 @@ const Toolbar: React.FC<ToolbarProps> = ({
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colorMap.get(ann.className) }}></span>
                   <span className="truncate">{`Annotation ${index + 1} (${ann.className})`}</span>
                 </div>
-                <button onClick={(e) => { e.stopPropagation(); onDeleteAnnotation(ann.id); }} className="p-1 rounded-full hover:bg-red-500/50 text-gray-400 hover:text-white flex-shrink-0">
-                  <TrashIcon className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onResizeAnnotation(ann.id, -Math.max(1, Math.min(50, parseFloat(refineDelta) || 5))); }}
+                    className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-white text-xs"
+                    title="Contract annotation"
+                  >
+                    –
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onResizeAnnotation(ann.id, Math.max(1, Math.min(50, parseFloat(refineDelta) || 5))); }}
+                    className="p-1 rounded-md bg-white/5 hover:bg-white/10 text-white text-xs"
+                    title="Expand annotation"
+                  >
+                    +
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); onDeleteAnnotation(ann.id); }} className="p-1 rounded-full hover:bg-red-500/50 text-gray-400 hover:text-white flex-shrink-0">
+                    <TrashIcon className="w-4 h-4" />
+                  </button>
+                </div>
               </button>
             ))
           )}
         </div>
+        {selectedAnnotationId && (
+          <div className="mt-2 p-2 bg-white/5 border border-white/10 rounded-md text-xs text-gray-200 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-white/80">Refine size</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  className="w-16 bg-slate-900/70 border border-white/10 text-white rounded px-2 py-1 focus:ring-1 focus:ring-indigo-400 focus:outline-none"
+                  value={refineDelta}
+                  min={1}
+                  max={50}
+                  onChange={(e) => setRefineDelta(e.target.value)}
+                />
+                <span className="text-white/50">%</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onResizeAnnotation(selectedAnnotationId, -(Math.max(1, Math.min(50, parseFloat(refineDelta) || 5))))}
+                className="flex-1 px-2 py-1 rounded-md bg-white text-slate-900 font-semibold hover:bg-slate-100 text-sm"
+              >
+                Contract
+              </button>
+              <button
+                onClick={() => onResizeAnnotation(selectedAnnotationId, Math.max(1, Math.min(50, parseFloat(refineDelta) || 5)))}
+                className="flex-1 px-2 py-1 rounded-md bg-slate-800 text-white font-semibold hover:bg-slate-700 text-sm"
+              >
+                Expand
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 pt-4 border-t border-gray-700 space-y-4 flex-shrink-0">

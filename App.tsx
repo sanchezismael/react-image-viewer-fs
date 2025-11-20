@@ -728,6 +728,28 @@ const App: React.FC = () => {
     deleteAnnotation(id);
   }, [currentIndex, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, deleteAnnotation]);
 
+  const handleResizeAnnotation = useCallback((id: string, deltaPercent: number) => {
+    const anns = allAnnotations[currentIndex] || [];
+    const target = anns.find(a => a.id === id);
+    const bounds = imageDimensions || allImageDimensions[currentIndex];
+    if (!target || !bounds) return;
+
+    const scale = 1 + deltaPercent / 100;
+    const cx = target.points.reduce((sum, p) => sum + p.x, 0) / target.points.length;
+    const cy = target.points.reduce((sum, p) => sum + p.y, 0) / target.points.length;
+    const clamp = (val: number, max: number) => Math.max(0, Math.min(max, val));
+
+    const scaledPoints = target.points.map(p => ({
+      x: clamp(cx + (p.x - cx) * scale, bounds.width),
+      y: clamp(cy + (p.y - cy) * scale, bounds.height)
+    }));
+
+    setAllAnnotations(prev => ({
+      ...prev,
+      [currentIndex]: anns.map(a => a.id === id ? { ...a, points: scaledPoints } : a)
+    }));
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
+
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
   const handleToggleDrawingMode = useCallback(() => {
