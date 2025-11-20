@@ -751,11 +751,6 @@ const App: React.FC = () => {
     }));
   }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
 
-  const handleMorphAnnotation = useCallback((mode: 'dilate' | 'erode') => {
-    if (!selectedAnnotationId) return;
-    morphAnnotation(selectedAnnotationId, refineRadius, mode);
-  }, [selectedAnnotationId, refineRadius, morphAnnotation]);
-
   const simplifyPath = (points: Point[], tolerance = 1): Point[] => {
     if (points.length <= 2) return points;
     const sqTolerance = tolerance * tolerance;
@@ -918,6 +913,11 @@ const App: React.FC = () => {
       [currentIndex]: anns.map(a => a.id === id ? { ...a, points: contour } : a)
     }));
   }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
+
+  const handleMorphAnnotation = useCallback((mode: 'dilate' | 'erode') => {
+    if (!selectedAnnotationId) return;
+    morphAnnotation(selectedAnnotationId, refineRadius, mode);
+  }, [selectedAnnotationId, refineRadius, morphAnnotation]);
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
