@@ -956,7 +956,7 @@ const App: React.FC = () => {
   const viewerImageKey = currentImage?.path ?? currentImage?.url ?? `image-${currentIndex}`;
 
   return (
-    <div className="w-screen h-screen bg-gray-900 flex flex-row overflow-hidden font-sans">
+    <div className="app-shell w-screen h-screen flex flex-row overflow-hidden relative z-10">
       {showConfetti && <Confetti />}
       
       {/* Loading overlay with Rocket animation */}
@@ -1042,7 +1042,7 @@ const App: React.FC = () => {
         />
       )}
       
-      <main className="flex-1 h-full flex items-center justify-center relative bg-black/50 p-8">
+      <main className="flex-1 h-full flex items-center justify-center relative p-8">
         {hasImages && imageDimensions && currentImageUrl ? (
           <ImageViewer
             ref={imageViewerRef}

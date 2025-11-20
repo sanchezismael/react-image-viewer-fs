@@ -111,7 +111,7 @@ const DirectoryBrowser: React.FC<DirectoryBrowserProps> = ({ onSelectDirectory, 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-gray-800 rounded-xl shadow-2xl w-[90%] max-w-3xl max-h-[80vh] flex flex-col">
+      <div className="glass-strong rounded-xl w-[90%] max-w-3xl max-h-[80vh] flex flex-col border border-white/10">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
           <h2 className="text-2xl font-bold text-gray-100 flex items-center gap-2">

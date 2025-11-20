@@ -156,26 +156,27 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const currentImagePixelArea = currentImageDimensions ? currentImageDimensions.width * currentImageDimensions.height : 0;
 
   return (
-    <aside className="w-80 h-screen bg-gray-800 text-white flex flex-col p-4 border-r border-gray-700 shadow-lg shrink-0 overflow-y-auto thumbnail-scrollbar">
-      <div className="mb-4 pb-4 border-b border-gray-700">
-        <h1 className="text-xl font-bold text-gray-200 mb-4">Image Annotator</h1>
+    <aside className="w-80 h-screen glass-panel text-white flex flex-col p-5 border-r border-white/10 shadow-2xl shrink-0 overflow-y-auto thumbnail-scrollbar relative">
+      <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-indigo-600/20 to-transparent pointer-events-none" />
+      <div className="mb-4 pb-4 border-b border-white/5 relative z-10">
+        <h1 className="text-2xl font-bold neon-text mb-4">Image Annotator</h1>
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onFileSelect} className="px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500">
+          <button onClick={onFileSelect} className="px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-indigo-400">
             Change Folder
           </button>
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-rose-500 text-white rounded-md hover:bg-rose-400 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-rose-400">
             Close
           </button>
           <button
             onClick={onSaveAll}
             disabled={isSaving}
-            className="col-span-2 px-4 py-2 text-sm font-semibold bg-sky-600 text-white rounded-md hover:bg-sky-700 disabled:bg-gray-600 disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-sky-500"
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-sky-600 text-white rounded-md hover:bg-sky-500 disabled:bg-gray-600 disabled:cursor-wait transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-sky-400"
           >
             {isSaving ? 'Saving…' : 'Guardar cambios'}
           </button>
           <button
             onClick={onOpenDashboard}
-            className="col-span-2 px-4 py-2 text-sm font-semibold bg-purple-700 text-white rounded-md hover:bg-purple-800 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-purple-500 flex items-center justify-center gap-2"
+            className="col-span-2 px-4 py-2 text-sm font-semibold bg-gradient-to-r from-purple-600 to-indigo-500 text-white rounded-md hover:from-purple-500 hover:to-indigo-400 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-purple-300 flex items-center justify-center gap-2"
           >
             <ChartIcon className="w-5 h-5" />
             <span>Dashboard</span>
@@ -210,58 +211,58 @@ const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      <div className="mb-4 pb-4 border-b border-gray-700 text-sm flex-shrink-0">
-        <p className="font-semibold break-words" title={images[currentIndex]?.name}>{images[currentIndex]?.name || '...'}</p>
-        <div className="text-gray-400 flex items-center justify-between mt-2">
-          <span className="font-mono">{currentIndex + 1} / {images.length}</span>
+      <div className="mb-4 pb-4 border-b border-white/5 text-sm flex-shrink-0">
+        <p className="font-semibold break-words text-white/90" title={images[currentIndex]?.name}>{images[currentIndex]?.name || '...'}</p>
+        <div className="text-gray-300 flex items-center justify-between mt-2">
+          <span className="font-mono text-sm px-2 py-1 rounded bg-white/5 border border-white/5">{currentIndex + 1} / {images.length}</span>
           <form onSubmit={handleJump} className="flex items-center gap-1">
               <input
                   type="number"
                   value={jumpToValue}
                   onChange={(e) => setJumpToValue(e.target.value)}
                   placeholder="Go to..."
-                  className="w-20 bg-gray-900 text-white text-xs rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-20 bg-slate-900/80 border border-white/10 text-white text-xs rounded-md px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                   min="1"
                   max={images.length}
               />
-              <button type="submit" className="px-2 py-1 text-xs font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors">Go</button>
+              <button type="submit" className="px-2 py-1 text-xs font-semibold bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition-colors">Go</button>
           </form>
         </div>
       </div>
 
-      <div className="mb-4 pb-4 border-b border-gray-700">
-        <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Current Image Timer</h2>
+      <div className="mb-4 pb-4 border-b border-white/5">
+        <h2 className="text-sm font-semibold text-gray-200 px-1 mb-2">Current Image Timer</h2>
         <div className="space-y-2">
-            <div className="p-2 bg-gray-700/50 rounded-lg flex justify-between items-center" title={`Total Time${isTimerPaused ? ' (Paused)' : ''}`}>
-               <div className="flex items-center gap-2 text-gray-300">
-                  <ClockIcon className={`w-5 h-5 transition-colors ${isTimerPaused ? 'text-red-500 animate-pulse' : 'text-gray-400'}`} />
+            <div className="p-3 frosted rounded-lg flex justify-between items-center" title={`Total Time${isTimerPaused ? ' (Paused)' : ''}`}>
+               <div className="flex items-center gap-2 text-gray-200">
+                  <ClockIcon className={`w-5 h-5 transition-colors ${isTimerPaused ? 'text-rose-400 animate-pulse' : 'text-sky-300'}`} />
                   <span className="text-sm">Total Time</span>
                </div>
-               <span className={`font-mono text-lg transition-colors ${isTimerPaused ? 'text-red-500' : 'text-amber-400'}`}>{formatTime(annotationTime)}</span>
+               <span className={`font-mono text-lg transition-colors ${isTimerPaused ? 'text-rose-400' : 'text-amber-300'}`}>{formatTime(annotationTime)}</span>
             </div>
-            <div className="p-2 bg-gray-700/50 rounded-lg flex justify-between items-center" title="Active Annotation Time">
-               <div className="flex items-center gap-2 text-gray-300">
-                  <PencilIcon className="w-5 h-5 text-gray-400" />
+            <div className="p-3 frosted rounded-lg flex justify-between items-center" title="Active Annotation Time">
+               <div className="flex items-center gap-2 text-gray-200">
+                  <PencilIcon className="w-5 h-5 text-indigo-200" />
                   <span className="text-sm">Active Time</span>
                </div>
-               <span className="font-mono text-lg text-cyan-400">{formatTime(activeAnnotationTime)}</span>
+               <span className="font-mono text-lg text-cyan-300">{formatTime(activeAnnotationTime)}</span>
             </div>
         </div>
       </div>
 
-      <div className="mb-4 pb-4 border-b border-gray-700">
-        <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Total Project Time</h2>
+      <div className="mb-4 pb-4 border-b border-white/5">
+        <h2 className="text-sm font-semibold text-gray-200 px-1 mb-2">Total Project Time</h2>
         <div className="space-y-2">
-            <div className="p-2 bg-indigo-900/30 rounded-lg flex justify-between items-center border border-indigo-500/30" title="Total Time Across All Images">
-               <div className="flex items-center gap-2 text-gray-300">
-                  <ClockIcon className="w-5 h-5 text-indigo-400" />
+            <div className="p-3 bg-indigo-900/40 rounded-lg flex justify-between items-center border border-indigo-500/40" title="Total Time Across All Images">
+               <div className="flex items-center gap-2 text-gray-200">
+                  <ClockIcon className="w-5 h-5 text-indigo-300" />
                   <span className="text-sm font-semibold">Total</span>
                </div>
                <span className="font-mono text-lg font-bold text-indigo-300">{formatTime(totalProjectTime)}</span>
             </div>
-            <div className="p-2 bg-cyan-900/30 rounded-lg flex justify-between items-center border border-cyan-500/30" title="Total Active Time Across All Images">
-               <div className="flex items-center gap-2 text-gray-300">
-                  <PencilIcon className="w-5 h-5 text-cyan-400" />
+            <div className="p-3 bg-cyan-900/40 rounded-lg flex justify-between items-center border border-cyan-500/40" title="Total Active Time Across All Images">
+               <div className="flex items-center gap-2 text-gray-200">
+                  <PencilIcon className="w-5 h-5 text-cyan-300" />
                   <span className="text-sm font-semibold">Active</span>
                </div>
                <span className="font-mono text-lg font-bold text-cyan-300">{formatTime(totalActiveProjectTime)}</span>
@@ -270,12 +271,12 @@ const Toolbar: React.FC<ToolbarProps> = ({
       </div>
 
       {outputPaths && (
-        <div className="mb-4 pb-4 border-b border-gray-700 text-xs text-gray-300 space-y-2">
+        <div className="mb-4 pb-4 border-b border-white/5 text-xs text-gray-200 space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-400">Output Folders</h2>
+            <h2 className="text-sm font-semibold text-gray-200">Output Folders</h2>
             <button
               onClick={onToggleOutputSettings}
-              className="text-indigo-400 text-xs hover:text-indigo-200"
+              className="text-indigo-300 text-xs hover:text-indigo-100"
             >
               {showOutputSettings ? 'Ocultar' : 'Avanzado'}
             </button>
@@ -286,13 +287,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
             { label: 'Times (TXT)', key: 'times' as const }
           ]).map(item => (
             <div key={item.key} className="space-y-1">
-              <p className="text-[11px] uppercase tracking-wide text-gray-500">{item.label}</p>
+              <p className="text-[11px] uppercase tracking-wide text-gray-400">{item.label}</p>
               <div className="flex items-center gap-2">
                 <span className="flex-1 truncate font-mono" title={outputPaths[item.key]}>{outputPaths[item.key]}</span>
                 {showOutputSettings && (
                   <button
                     onClick={() => onRequestOutputPathChange(item.key)}
-                    className="px-2 py-1 text-[11px] font-semibold bg-gray-700 rounded-md hover:bg-gray-600"
+                    className="px-2 py-1 text-[11px] font-semibold bg-white/10 border border-white/10 rounded-md hover:bg-white/20"
                   >
                     Cambiar
                   </button>
@@ -303,7 +304,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
           {showOutputSettings && (
             <button
               onClick={onRestoreDefaultOutputPaths}
-              className="w-full mt-2 px-3 py-1.5 text-xs font-semibold bg-gray-700 text-white rounded-md hover:bg-gray-600"
+              className="w-full mt-2 px-3 py-1.5 text-xs font-semibold bg-white/10 text-white rounded-md hover:bg-white/20"
             >
               Restaurar rutas por defecto
             </button>
@@ -312,8 +313,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
       )}
 
       {totalImages > 0 && (
-        <div className="mb-4 pb-4 border-b border-gray-700">
-          <h2 className="text-sm font-semibold text-gray-400 px-1 mb-2">Completion Progress</h2>
+        <div className="mb-4 pb-4 border-b border-white/5">
+          <h2 className="text-sm font-semibold text-gray-200 px-1 mb-2">Completion Progress</h2>
           <div className="flex items-center gap-4 p-2 bg-gray-700/50 rounded-lg">
             <DonutChart progress={completedImagesCount / totalImages} size={60} />
             <div>
@@ -325,9 +326,9 @@ const Toolbar: React.FC<ToolbarProps> = ({
       )}
 
       {annotationStats && (
-        <div className="mb-4 pb-4 border-b border-gray-700 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-400 px-1">Pixel Statistics</h2>
-          <div className="p-2 bg-gray-700/50 rounded-lg space-y-3">
+        <div className="mb-4 pb-4 border-b border-white/5 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-200 px-1">Pixel Statistics</h2>
+          <div className="p-2 bg-white/5 rounded-lg space-y-3 border border-white/10">
             <StatsSection
               title="Current Image"
               stats={annotationStats.currentImage}
@@ -345,10 +346,10 @@ const Toolbar: React.FC<ToolbarProps> = ({
       )}
       
       <div className="space-y-2 mb-4 flex-shrink-0">
-        <h2 className="text-sm font-semibold text-gray-400 px-1">Annotation Classes</h2>
+        <h2 className="text-sm font-semibold text-gray-200 px-1">Annotation Classes</h2>
         <div className="flex flex-col gap-1">
           {annotationClasses.map((cls) => (
-            <div key={cls.name} className={`w-full text-left text-sm rounded-md transition-colors flex items-center justify-between pr-2 ${ selectedAnnotationClass === cls.name ? 'bg-indigo-600 text-white font-semibold' : 'bg-gray-700 hover:bg-gray-600' }`}>
+            <div key={cls.name} className={`w-full text-left text-sm rounded-md transition-colors flex items-center justify-between pr-2 ${ selectedAnnotationClass === cls.name ? 'bg-indigo-600/80 text-white font-semibold shadow-lg' : 'bg-white/5 hover:bg-white/10' }`}>
                 <div onClick={() => onSelectAnnotationClass(cls.name)} className="flex items-center gap-3 px-3 py-2 flex-grow cursor-pointer">
                     <div className="w-4 h-4 rounded-full border-2 border-white/50 flex-shrink-0" style={{ backgroundColor: cls.color }}></div>
                     <span className="flex-grow truncate">{cls.name}</span>
@@ -368,12 +369,12 @@ const Toolbar: React.FC<ToolbarProps> = ({
         </div>
         <form onSubmit={handleAddClass} className="mt-2 space-y-2">
             <div className="flex gap-2">
-                 <input
+                <input
                     type="text"
                     value={newClassName}
                     onChange={(e) => setNewClassName(e.target.value)}
                     placeholder="New class name..."
-                    className="flex-grow bg-gray-900 text-white text-sm rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="flex-grow bg-slate-900/70 border border-white/10 text-white text-sm rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 />
                 <input
                     type="number"
@@ -382,12 +383,12 @@ const Toolbar: React.FC<ToolbarProps> = ({
                     placeholder="ID"
                     min="1"
                     max="255"
-                    className="w-16 bg-gray-900 text-white text-sm rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-16 bg-slate-900/70 border border-white/10 text-white text-sm rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 />
             </div>
             <button 
                 type="submit" 
-                className="w-full px-3 py-1.5 text-sm font-semibold bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-green-500"
+                className="w-full px-3 py-1.5 text-sm font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-emerald-300"
             >
                 Add Class
             </button>
@@ -401,7 +402,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
             <div className="text-center text-gray-500 text-sm py-4">No annotations yet.</div>
           ) : (
             annotations.map((ann, index) => (
-              <button key={ann.id} onClick={() => onSelectAnnotation(ann.id)} className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center justify-between gap-2 ${ selectedAnnotationId === ann.id ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}`}>
+              <button key={ann.id} onClick={() => onSelectAnnotation(ann.id)} className={`w-full text-left px-3 py-2 text-sm rounded-md transition-colors flex items-center justify-between gap-2 ${ selectedAnnotationId === ann.id ? 'bg-blue-600 text-white shadow-lg' : 'bg-white/5 hover:bg-white/10'}`}>
                 <div className="flex items-center gap-2 overflow-hidden">
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: colorMap.get(ann.className) }}></span>
                   <span className="truncate">{`Annotation ${index + 1} (${ann.className})`}</span>
@@ -417,13 +418,13 @@ const Toolbar: React.FC<ToolbarProps> = ({
 
       <div className="mt-4 pt-4 border-t border-gray-700 space-y-4 flex-shrink-0">
         {images.length > 1 && (
-            <div className="flex justify-between items-center bg-gray-700/50 p-1 rounded-lg">
+            <div className="flex justify-between items-center bg-white/5 p-1 rounded-lg border border-white/10">
                 <button onClick={onPrevious} className="p-2 text-white rounded-md hover:bg-white/10 transition-colors flex-1" aria-label="Previous Image"><ChevronLeftIcon className="w-6 h-6 mx-auto" /></button>
                 <div className="w-px h-6 bg-white/20"></div>
                 <button onClick={onNext} className="p-2 text-white rounded-md hover:bg-white/10 transition-colors flex-1" aria-label="Next Image"><ChevronRightIcon className="w-6 h-6 mx-auto" /></button>
             </div>
         )}
-        <div className="bg-gray-700/50 p-1 rounded-lg flex items-center gap-1">
+        <div className="bg-white/5 border border-white/10 p-1 rounded-lg flex items-center gap-1">
           <button onClick={onZoomOut} className="p-2 text-white rounded-md hover:bg-white/10 transition-colors" aria-label="Zoom Out"><MinusIcon className="w-6 h-6" /></button>
           <span className="text-white font-mono text-sm w-16 text-center tabular-nums">{Math.round(transform.scale * 100)}%</span>
           <button onClick={onZoomIn} className="p-2 text-white rounded-md hover:bg-white/10 transition-colors" aria-label="Zoom In"><PlusIcon className="w-6 h-6" /></button>
