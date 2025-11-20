@@ -146,6 +146,15 @@ export const useTimer = (currentIndex: number, isCompleted: boolean, restartKey:
       setIsTimerPaused(nextIsCompleted);
       if (!nextIsCompleted) {
         resetInactivityTimer();
+      } else {
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        if (activeTimerRef.current) {
+          clearInterval(activeTimerRef.current);
+          activeTimerRef.current = null;
+        }
       }
   }, [resetInactivityTimer]);
 

@@ -132,10 +132,16 @@ app.get('/api/files', async (req, res) => {
     const images = [];
     const jsonFiles = [];
 
+    // Hard guard to avoid blowing up on huge directories
+    const MAX_ENTRIES = 2000;
+    let processed = 0;
     const statPromises = [];
 
     for (const item of items) {
+      if (processed >= MAX_ENTRIES) break;
       if (!item.isFile()) continue;
+      if (item.name.startsWith('.')) continue;
+
       const ext = path.extname(item.name).toLowerCase();
 
       const isImage = ALLOWED_IMAGE_EXTENSIONS.includes(ext) && !item.name.endsWith('_mask.png');
@@ -143,6 +149,7 @@ app.get('/api/files', async (req, res) => {
       if (!isImage && !isJson) continue;
 
       const fullPath = path.join(dirPath, item.name);
+      processed += 1;
       statPromises.push(
         (async () => {
           const fileStats = await fsp.stat(fullPath);

@@ -164,6 +164,7 @@ const App: React.FC = () => {
 
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const liveDashboardEntries = React.useMemo(() => {
     if (imageFiles.length === 0) {
@@ -181,6 +182,20 @@ const App: React.FC = () => {
   useEffect(() => {
     dashboardEntriesRef.current = dashboardEntries;
   }, [dashboardEntries]);
+
+  // Preload neighbors to make navigation snappier
+  useEffect(() => {
+    if (!imageFiles.length) return;
+    const preload = (idx: number) => {
+      const url = imageFiles[idx]?.url;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+      }
+    };
+    preload(currentIndex + 1);
+    preload(currentIndex - 1);
+  }, [currentIndex, imageFiles]);
 
   const hydrateDashboardEntries = useCallback(async (timesPath?: string, fallbackEntries?: DashboardEntry[]) => {
     if (!timesPath) {
@@ -576,14 +591,18 @@ const App: React.FC = () => {
           operations.push(saveJsonFile(jsonPath, exportData));
         }
 
-        if (maskPath) {
+        if (maskPath && currentAnns.some(ann => ann.points.length >= 3)) {
           const dims = imageDimensions || allImageDimensions[currentIndex];
           if (dims) {
-            const canvas = document.createElement('canvas');
+            if (!maskCanvasRef.current) {
+              maskCanvasRef.current = document.createElement('canvas');
+            }
+            const canvas = maskCanvasRef.current;
             canvas.width = dims.width;
             canvas.height = dims.height;
             const ctx = canvas.getContext('2d');
             if (ctx) {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
               ctx.fillStyle = 'rgb(0, 0, 0)';
               ctx.fillRect(0, 0, canvas.width, canvas.height);
 
