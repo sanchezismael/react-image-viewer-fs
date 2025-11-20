@@ -30,6 +30,10 @@ interface ToolbarProps {
     masks: string;
     times: string;
   } | null;
+  wandActive: boolean;
+  wandTolerance: number;
+  onToggleWand: () => void;
+  onChangeWandTolerance: (val: number) => void;
   showOutputSettings: boolean;
   onToggleOutputSettings: () => void;
   onRequestOutputPathChange: (type: 'annotations' | 'masks' | 'times') => void;
@@ -113,7 +117,7 @@ const Toolbar: React.FC<ToolbarProps> = ({
   selectedAnnotationId, totalImages, completedImagesCount, annotationStats, currentImageDimensions, allImageDimensions,
   annotationTime, activeAnnotationTime, isTimerPaused, isCurrentImageCompleted, totalProjectTime, totalActiveProjectTime, onFileSelect, onClose, onPrevious, onNext, onGoToIndex, onZoomIn, onZoomOut, onReset,
   onToggleDrawingMode, onAddAnnotationClass, onUpdateAnnotationClassColor, onSelectAnnotationClass, onSelectAnnotation, onDeleteAnnotation,
-  onSaveAll, onMarkAsComplete, onDeleteCurrentImage, onOpenDashboard, isSaving, isDeletingImage, outputPaths, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
+  onSaveAll, onMarkAsComplete, onDeleteCurrentImage, onOpenDashboard, isSaving, isDeletingImage, outputPaths, wandActive, wandTolerance, onToggleWand, onChangeWandTolerance, showOutputSettings, onToggleOutputSettings, onRequestOutputPathChange, onRestoreDefaultOutputPaths
 }) => {
   const colorMap = React.useMemo(() => new Map(annotationClasses.map(cls => [cls.name, cls.color])), [annotationClasses]);
   const [newClassName, setNewClassName] = useState('');
@@ -312,6 +316,33 @@ const Toolbar: React.FC<ToolbarProps> = ({
           )}
         </div>
       )}
+
+      <div className="mb-4 pb-4 border-b border-white/5 text-xs text-gray-200 space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-200">Magic Wand</h2>
+          <button
+            onClick={onToggleWand}
+            className={`px-3 py-1 rounded-md text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 ${
+              wandActive ? 'bg-white text-slate-900 focus:ring-indigo-300' : 'bg-slate-800 text-white focus:ring-indigo-400'
+            }`}
+          >
+            {wandActive ? 'On' : 'Off'}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-white/70">Tolerance</span>
+          <input
+            type="range"
+            min={1}
+            max={60}
+            value={wandTolerance}
+            onChange={(e) => onChangeWandTolerance(parseInt(e.target.value, 10) || 1)}
+            className="flex-1 accent-white"
+          />
+          <span className="w-12 text-right text-white/80">{wandTolerance}</span>
+        </div>
+        <p className="text-gray-400">Click to expand, Shift+click to subtract.</p>
+      </div>
 
       {totalImages > 0 && (
         <div className="mb-4 pb-4 border-b border-white/5">

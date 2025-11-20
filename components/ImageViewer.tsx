@@ -23,8 +23,8 @@ interface ImageViewerProps {
   onActivity: () => void;
   startActiveTimer: () => void;
   stopActiveTimer: () => void;
-  refineMode: boolean;
-  onRefineRequest: (point: Point, erode: boolean) => void;
+  wandActive: boolean;
+  onWandRequest: (point: Point, erode: boolean) => void;
 }
 
 const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
@@ -43,7 +43,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   { 
     src, onTransformChange, isDrawingMode, annotations, annotationClasses, 
     selectedAnnotationClass, selectedAnnotationId, onAddAnnotation, onSelectAnnotation, imageDimensions, onActivity,
-    startActiveTimer, stopActiveTimer, refineMode, onRefineRequest
+    startActiveTimer, stopActiveTimer, wandActive, onWandRequest
   },
   ref
 ) => {
@@ -192,9 +192,9 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   }, [isDrawing, currentPath, selectedAnnotationClass, onAddAnnotation, stopActiveTimer]);
 
   const handleCanvasClick = (e: React.MouseEvent) => {
-    if (refineMode) {
+    if (wandActive) {
       const point = getTransformedPoint(e.clientX, e.clientY);
-      onRefineRequest(point, e.shiftKey);
+      onWandRequest(point, e.shiftKey);
       return;
     }
     if (isDrawingMode || e.defaultPrevented) return;
@@ -211,10 +211,10 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
   const handleMouseDown = (e: React.MouseEvent) => {
     onActivity();
-    if (refineMode) {
+    if (wandActive) {
       isRefining.current = true;
       lastRefineTs.current = 0;
-      onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+      onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
       return;
     }
     if (isDrawingMode) handleDrawStart(e.clientX, e.clientY);
@@ -240,10 +240,10 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (refineMode && isRefining.current) {
+      if (wandActive && isRefining.current) {
         const now = performance.now();
         if (now - lastRefineTs.current > 40) {
-          onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+          onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
           lastRefineTs.current = now;
         }
         return;
@@ -253,11 +253,11 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
     const handleTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 1) {
-        if (refineMode && isRefining.current) {
+        if (wandActive && isRefining.current) {
           const touch = e.touches[0];
           const now = performance.now();
           if (now - lastRefineTs.current > 60) {
-            onRefineRequest(getTransformedPoint(touch.clientX, touch.clientY), false);
+            onWandRequest(getTransformedPoint(touch.clientX, touch.clientY), false);
             lastRefineTs.current = now;
           }
           return;
@@ -266,7 +266,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       }
     };
 
-    if (isDrawing || (refineMode && isRefining.current)) {
+    if (isDrawing || (wandActive && isRefining.current)) {
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleDrawEnd);
       window.addEventListener('touchmove', handleTouchMove);
@@ -279,14 +279,14 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleDrawEnd);
     };
-  }, [isDrawing, handleDrawMove, handleDrawEnd, refineMode, onRefineRequest, getTransformedPoint]);
+  }, [isDrawing, handleDrawMove, handleDrawEnd, wandActive, onWandRequest, getTransformedPoint]);
 
   const handleViewerMouseMove = (e: React.MouseEvent) => {
     onActivity();
-    if (refineMode && isRefining.current) {
+    if (wandActive && isRefining.current) {
       const now = performance.now();
       if (now - lastRefineTs.current > 40) {
-        onRefineRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+        onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
         lastRefineTs.current = now;
       }
       return;

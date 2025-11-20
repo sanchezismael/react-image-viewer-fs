@@ -6,7 +6,6 @@ import DashboardModal from './components/DashboardModal';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import Confetti from './components/Confetti';
 import RocketLaunchAnimation from './components/RocketLaunchAnimation';
-import RefineOverlay from './components/RefineOverlay';
 import { TransformState } from './hooks/useImageTransform';
 import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, deleteImageAssets } from './utils/api';
 import { DashboardEntry } from './types/dashboard';
@@ -162,8 +161,10 @@ const App: React.FC = () => {
   const [dashboardEntries, setDashboardEntries] = useState<DashboardEntry[]>([]);
   const dashboardEntriesRef = useRef<DashboardEntry[]>([]);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
-  const [refineRadius, setRefineRadius] = useState<number>(6);
-  const [refineMode, setRefineMode] = useState<boolean>(false);
+  const [wandTolerance, setWandTolerance] = useState<number>(15);
+  const [wandMode, setWandMode] = useState<boolean>(false);
+  const wandImageDataRef = useRef<ImageData | null>(null);
+  const wandCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [lastDirectory, setLastDirectory] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     return localStorage.getItem('lastDirectory') || '';
