@@ -221,13 +221,17 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
     else handlePanMouseDown(e);
   };
 
+  const handleMouseUp = () => {
+    isRefining.current = false;
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     onActivity();
-    if (refineMode) {
+    if (wandActive) {
       if (e.touches.length === 1) {
         isRefining.current = true;
         lastRefineTs.current = 0;
-        onRefineRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false);
+        onWandRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false);
       }
       return;
     }
@@ -342,6 +346,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       }}
       onWheel={handleWheelWithActivity}
       onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onTouchStart={handleTouchStart}
       onClick={handleCanvasClick}
       onMouseMove={handleViewerMouseMove}

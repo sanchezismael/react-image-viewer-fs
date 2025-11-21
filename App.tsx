@@ -47,6 +47,18 @@ const appendDashboardEntry = (entries: DashboardEntry[], entry: DashboardEntry) 
   return updated;
 };
 
+const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
+  let isInside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    const intersect = ((yi > point.y) !== (yj > point.y)) &&
+      (point.x < (xj - xi) * (point.y - yi) / (yj - yi + 1e-6) + xi);
+    if (intersect) isInside = !isInside;
+  }
+  return isInside;
+};
+
 const buildHistoricalDashboardEntries = (
   files: any[],
   annotations: Record<number, Annotation[]>,
@@ -190,6 +202,51 @@ const App: React.FC = () => {
   useEffect(() => {
     dashboardEntriesRef.current = dashboardEntries;
   }, [dashboardEntries]);
+
+  // Build pixel buffer for wand operations when image changes
+  useEffect(() => {
+    const buildData = async () => {
+      const url = imageFiles[currentIndex]?.url;
+      const dims = imageDimensions || allImageDimensions[currentIndex];
+      if (!url || !dims) {
+        wandImageDataRef.current = null;
+        return;
+      }
+
+      if (!wandCanvasRef.current) {
+        wandCanvasRef.current = document.createElement('canvas');
+      }
+      const canvas = wandCanvasRef.current;
+      canvas.width = dims.width;
+      canvas.height = dims.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        wandImageDataRef.current = null;
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          try {
+            wandImageDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          } catch {
+            wandImageDataRef.current = null;
+          }
+          resolve();
+        };
+        img.onerror = () => {
+          wandImageDataRef.current = null;
+          resolve();
+        };
+        img.src = url;
+      });
+    };
+    void buildData();
+  }, [currentIndex, imageFiles, imageDimensions, allImageDimensions]);
 
   // Preload neighbors to make navigation snappier
   useEffect(() => {
@@ -718,6 +775,124 @@ const App: React.FC = () => {
     addAnnotation(annotationWithId);
   }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, addAnnotation]);
 
+  const regionGrow = useCallback((seed: Point, tolerance: number) => {
+    const data = wandImageDataRef.current;
+    if (!data) return null;
+    const { width, height, data: pixels } = data;
+    const sx = Math.floor(seed.x);
+    const sy = Math.floor(seed.y);
+    if (sx < 0 || sy < 0 || sx >= width || sy >= height) return null;
+
+    const idxSeed = (sy * width + sx) * 4;
+    const r0 = pixels[idxSeed];
+    const g0 = pixels[idxSeed + 1];
+    const b0 = pixels[idxSeed + 2];
+    const tolSq = tolerance * tolerance * 3;
+
+    const visited = new Uint8Array(width * height);
+    const mask = new Uint8Array(width * height);
+    const queueX: number[] = [sx];
+    const queueY: number[] = [sy];
+    visited[sy * width + sx] = 1;
+    mask[sy * width + sx] = 1;
+
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    const maxPixels = Math.min(width * height, 500000);
+
+    while (queueX.length && queueX.length < maxPixels) {
+      const x = queueX.pop() as number;
+      const y = queueY.pop() as number;
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const idx = ny * width + nx;
+        if (visited[idx]) continue;
+        visited[idx] = 1;
+        const pIdx = idx * 4;
+        const dr = pixels[pIdx] - r0;
+        const dg = pixels[pIdx + 1] - g0;
+        const db = pixels[pIdx + 2] - b0;
+        const dist = dr * dr + dg * dg + db * db;
+        if (dist <= tolSq) {
+          mask[idx] = 1;
+          queueX.push(nx);
+          queueY.push(ny);
+        }
+      }
+    }
+    return { mask, width, height };
+  }, []);
+
+  const applyWand = useCallback((seed: Point, erode: boolean) => {
+    const dims = imageDimensions || allImageDimensions[currentIndex];
+    if (!dims) return;
+    const region = regionGrow(seed, wandTolerance);
+    if (!region) {
+      toast.error('No image data available for wand.');
+      return;
+    }
+    const { mask, width, height } = region;
+
+    let targetId = selectedAnnotationId || null;
+    const anns = allAnnotations[currentIndex] || [];
+    if (!targetId) {
+      for (let i = anns.length - 1; i >= 0; i--) {
+        if (isPointInPolygon(seed, anns[i].points)) {
+          targetId = anns[i].id;
+          break;
+        }
+      }
+    }
+
+    const className = selectedAnnotationClass;
+    if (!targetId && !className) {
+      toast.error('Select a class or an annotation to use the wand.');
+      return;
+    }
+
+    let baseMask = new Uint8Array(width * height);
+    if (targetId) {
+      const ann = anns.find(a => a.id === targetId);
+      if (ann) {
+        baseMask = rasterizePolygon(ann.points, width, height);
+      }
+    }
+
+    const resultMask = new Uint8Array(width * height);
+    for (let i = 0; i < mask.length; i++) {
+      const m = mask[i];
+      const b = baseMask[i];
+      resultMask[i] = erode ? (b && !m ? 1 : 0) : (b || m ? 1 : 0);
+    }
+
+    // quick check if empty
+    if (!resultMask.some(v => v === 1)) {
+      if (targetId) {
+        setAllAnnotations(prev => ({
+          ...prev,
+          [currentIndex]: (prev[currentIndex] || []).filter(a => a.id !== targetId)
+        }));
+      }
+      return;
+    }
+
+    const contour = marchingSquares(resultMask, width, height);
+    if (contour.length < 3) return;
+    const simple = simplifyPath(contour, 2);
+
+    if (targetId) {
+      setAllAnnotations(prev => ({
+        ...prev,
+        [currentIndex]: (prev[currentIndex] || []).map(a => a.id === targetId ? { ...a, points: simple } : a)
+      }));
+    } else if (className) {
+      const id = `${Date.now()}-${Math.random()}`;
+      const ann = { id, className, points: simple };
+      setAllAnnotations(prev => ({ ...prev, [currentIndex]: [...(prev[currentIndex] || []), ann] }));
+    }
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, regionGrow, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations]);
+
   const handleDeleteAnnotationWrapper = useCallback((id: string) => {
     // Si la imagen estaba completada, desmarcarla al hacer cambios
     if (completedImages[currentIndex]) {
@@ -803,150 +978,59 @@ const App: React.FC = () => {
     return simplified;
   };
 
-  const morphAnnotation = useCallback((id: string, radiusPx: number, mode: 'dilate' | 'erode') => {
-    const anns = allAnnotations[currentIndex] || [];
-    const target = anns.find(a => a.id === id);
-    const bounds = imageDimensions || allImageDimensions[currentIndex];
-    if (!target || !bounds) return;
-    if (radiusPx <= 0) return;
-
-    const xs = target.points.map(p => p.x);
-    const ys = target.points.map(p => p.y);
-    const minX = Math.max(0, Math.min(...xs) - radiusPx - 2);
-    const minY = Math.max(0, Math.min(...ys) - radiusPx - 2);
-    const maxX = Math.min(bounds.width, Math.max(...xs) + radiusPx + 2);
-    const maxY = Math.min(bounds.height, Math.max(...ys) + radiusPx + 2);
-    const w = Math.ceil(maxX - minX);
-    const h = Math.ceil(maxY - minY);
-    if (w <= 2 || h <= 2) return;
-
+  const rasterizePolygon = (points: Point[], width: number, height: number): Uint8Array => {
     const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, w, h);
-    ctx.save();
-    ctx.translate(-minX, -minY);
+    const mask = new Uint8Array(width * height);
+    if (!ctx || points.length < 3) return mask;
     ctx.beginPath();
-    ctx.moveTo(target.points[0].x, target.points[0].y);
-    for (let i = 1; i < target.points.length; i++) {
-      ctx.lineTo(target.points[i].x, target.points[i].y);
-    }
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
     ctx.closePath();
     ctx.fillStyle = '#fff';
     ctx.fill();
-    ctx.restore();
-
-    const applyBlurThreshold = (invert = false) => {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.filter = `blur(${radiusPx}px)`;
-      ctx.drawImage(canvas, 0, 0);
-      ctx.filter = 'none';
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        data[i + 3] = invert ? 255 - data[i] : data[i];
-        data[i] = data[i + 1] = data[i + 2] = data[i + 3] > 10 ? 255 : 0;
-      }
-      ctx.putImageData(imageData, 0, 0);
-    };
-
-    if (mode === 'dilate') {
-      applyBlurThreshold(false);
-    } else {
-      // erode: invert -> blur -> threshold -> invert
-      ctx.globalCompositeOperation = 'source-over';
-      const img = ctx.getImageData(0, 0, w, h);
-      for (let i = 0; i < img.data.length; i += 4) {
-        const val = img.data[i] > 0 ? 0 : 255;
-        img.data[i] = img.data[i + 1] = img.data[i + 2] = val;
-        img.data[i + 3] = 255;
-      }
-      ctx.putImageData(img, 0, 0);
-      applyBlurThreshold(true);
+    const data = ctx.getImageData(0, 0, width, height).data;
+    for (let i = 0; i < width * height; i++) {
+      mask[i] = data[i * 4] > 0 ? 1 : 0;
     }
+    return mask;
+  };
 
-    const imageData = ctx.getImageData(0, 0, w, h);
-    const mask = new Uint8Array(w * h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const idx = (y * w + x) * 4;
-        mask[y * w + x] = imageData.data[idx] > 0 ? 1 : 0;
-      }
-    }
-
-    // contour extraction (simple boundary trace)
-    const neighbors = [
-      [1, 0], [1, 1], [0, 1], [-1, 1],
-      [-1, 0], [-1, -1], [0, -1], [1, -1],
-    ];
-    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x];
-    let start: [number, number] | null = null;
-    for (let y = 0; y < h && !start; y++) {
-      for (let x = 0; x < w; x++) {
-        if (inside(x, y)) {
-          start = [x, y];
-          break;
+  const marchingSquares = (mask: Uint8Array, width: number, height: number): Point[] => {
+    const contours: Point[] = [];
+    const step = 1;
+    const get = (x: number, y: number) => (x >= 0 && y >= 0 && x < width && y < height ? mask[y * width + x] : 0);
+    for (let y = 0; y < height - step; y += step) {
+      for (let x = 0; x < width - step; x += step) {
+        const tl = get(x, y);
+        const tr = get(x + step, y);
+        const br = get(x + step, y + step);
+        const bl = get(x, y + step);
+        const idx = (tl << 3) | (tr << 2) | (br << 1) | bl;
+        switch (idx) {
+          case 1: contours.push({ x, y: y + step / 2 }); break;
+          case 2: contours.push({ x: x + step / 2, y: y + step }); break;
+          case 3: contours.push({ x, y: y + step / 2 }, { x: x + step / 2, y: y + step }); break;
+          case 4: contours.push({ x: x + step, y: y + step / 2 }); break;
+          case 5: contours.push({ x, y: y + step / 2 }, { x: x + step, y: y + step / 2 }); break;
+          case 6: contours.push({ x: x + step / 2, y: y + step }, { x: x + step, y: y + step / 2 }); break;
+          case 7: contours.push({ x, y: y + step / 2 }); break;
+          case 8: contours.push({ x: x + step / 2, y }); break;
+          case 9: contours.push({ x: x + step / 2, y }, { x, y: y + step / 2 }); break;
+          case 10: contours.push({ x: x + step / 2, y }, { x: x + step / 2, y: y + step }); break;
+          case 11: contours.push({ x: x + step / 2, y }); break;
+          case 12: contours.push({ x: x + step, y: y + step / 2 }, { x: x + step / 2, y }); break;
+          case 13: contours.push({ x: x + step, y: y + step / 2 }); break;
+          case 14: contours.push({ x: x + step / 2, y }); break;
+          default: break;
         }
       }
     }
-    if (!start) return;
+    return simplifyPath(contours, 1.5);
+  };
 
-    let contour: Point[] = [];
-    let current = start;
-    let prevDir = 0;
-    const maxSteps = w * h * 4;
-    for (let step = 0; step < maxSteps; step++) {
-      contour.push({ x: current[0] + minX, y: current[1] + minY });
-      let found = false;
-      for (let i = 0; i < 8; i++) {
-        const dir = (prevDir + 6 + i) % 8;
-        const nx = current[0] + neighbors[dir][0];
-        const ny = current[1] + neighbors[dir][1];
-        if (inside(nx, ny)) {
-          current = [nx, ny];
-          prevDir = dir;
-          found = true;
-          break;
-        }
-      }
-      if (!found || (current[0] === start[0] && current[1] === start[1] && contour.length > 10)) {
-        break;
-      }
-    }
-
-    contour = simplifyPath(contour, 1.5);
-    setAllAnnotations(prev => ({
-      ...prev,
-      [currentIndex]: anns.map(a => a.id === id ? { ...a, points: contour } : a)
-    }));
-  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
-
-  const handleMorphAnnotation = useCallback((mode: 'dilate' | 'erode') => {
-    if (!selectedAnnotationId) return;
-    morphAnnotation(selectedAnnotationId, refineRadius, mode);
-  }, [selectedAnnotationId, refineRadius, morphAnnotation]);
-
-  const handleRefineAtPoint = useCallback((point: Point, erode: boolean) => {
-    const anns = allAnnotations[currentIndex] || [];
-    let targetId = selectedAnnotationId || null;
-    if (!targetId) {
-      for (let i = anns.length - 1; i >= 0; i--) {
-        if (isPointInPolygon(point, anns[i].points)) {
-          targetId = anns[i].id;
-          break;
-        }
-      }
-    }
-    if (!targetId) {
-      toast.error('Select an annotation to refine or click inside one.');
-      return;
-    }
-    morphAnnotation(targetId, refineRadius, erode ? 'erode' : 'dilate');
-  }, [allAnnotations, currentIndex, morphAnnotation, refineRadius, selectedAnnotationId]);
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
@@ -1270,6 +1354,10 @@ const App: React.FC = () => {
           onSelectAnnotationClass={handleSelectAnnotationClass}
           onSelectAnnotation={handleSelectAnnotation}
           onDeleteAnnotation={handleDeleteAnnotationWrapper}
+          wandActive={wandMode}
+          wandTolerance={wandTolerance}
+          onToggleWand={() => setWandMode(v => !v)}
+          onChangeWandTolerance={setWandTolerance}
           onSaveAll={() => { void handleSaveAll(); }}
           onMarkAsComplete={handleMarkAsComplete}
           onDeleteCurrentImage={handleDeleteCurrentImage}
@@ -1283,14 +1371,6 @@ const App: React.FC = () => {
       )}
       
       <main className="flex-1 h-full flex items-center justify-center relative p-8">
-        {hasImages && (
-          <RefineOverlay
-            enabled={refineMode}
-            radius={refineRadius}
-            onToggle={() => setRefineMode((v) => !v)}
-            onRadiusChange={setRefineRadius}
-          />
-        )}
         {hasImages && imageDimensions && currentImageUrl ? (
           <ImageViewer
             ref={imageViewerRef}
@@ -1308,8 +1388,8 @@ const App: React.FC = () => {
             onActivity={resetInactivityTimer}
             startActiveTimer={startActiveTimer}
             stopActiveTimer={stopActiveTimer}
-            refineMode={refineMode}
-            onRefineRequest={handleRefineAtPoint}
+            wandActive={wandMode}
+            onWandRequest={applyWand}
           />
         ) : (
           <div className="text-center p-8">
