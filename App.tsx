@@ -53,7 +53,7 @@ const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
     const xi = polygon[i].x, yi = polygon[i].y;
     const xj = polygon[j].x, yj = polygon[j].y;
     const intersect = ((yi > point.y) !== (yj > point.y)) &&
-      (point.x < (xj - xi) * (point.y - yi) / (yj - yi + 1e-6) + xi);
+      (point.x < (xj - xi) * (point.y - yi) / ((yj - yi) || 1e-6) + xi);
     if (intersect) isInside = !isInside;
   }
   return isInside;
@@ -251,7 +251,7 @@ const App: React.FC = () => {
   // Preload neighbors to make navigation snappier
   useEffect(() => {
     if (!imageFiles.length) return;
-    const preload = (idx: number) => {
+  const preload = (idx: number) => {
       const url = imageFiles[idx]?.url;
       if (url) {
         const img = new Image();
@@ -999,36 +999,46 @@ const App: React.FC = () => {
   };
 
   const marchingSquares = (mask: Uint8Array, width: number, height: number): Point[] => {
-    const contours: Point[] = [];
-    const step = 1;
-    const get = (x: number, y: number) => (x >= 0 && y >= 0 && x < width && y < height ? mask[y * width + x] : 0);
-    for (let y = 0; y < height - step; y += step) {
-      for (let x = 0; x < width - step; x += step) {
-        const tl = get(x, y);
-        const tr = get(x + step, y);
-        const br = get(x + step, y + step);
-        const bl = get(x, y + step);
-        const idx = (tl << 3) | (tr << 2) | (br << 1) | bl;
-        switch (idx) {
-          case 1: contours.push({ x, y: y + step / 2 }); break;
-          case 2: contours.push({ x: x + step / 2, y: y + step }); break;
-          case 3: contours.push({ x, y: y + step / 2 }, { x: x + step / 2, y: y + step }); break;
-          case 4: contours.push({ x: x + step, y: y + step / 2 }); break;
-          case 5: contours.push({ x, y: y + step / 2 }, { x: x + step, y: y + step / 2 }); break;
-          case 6: contours.push({ x: x + step / 2, y: y + step }, { x: x + step, y: y + step / 2 }); break;
-          case 7: contours.push({ x, y: y + step / 2 }); break;
-          case 8: contours.push({ x: x + step / 2, y }); break;
-          case 9: contours.push({ x: x + step / 2, y }, { x, y: y + step / 2 }); break;
-          case 10: contours.push({ x: x + step / 2, y }, { x: x + step / 2, y: y + step }); break;
-          case 11: contours.push({ x: x + step / 2, y }); break;
-          case 12: contours.push({ x: x + step, y: y + step / 2 }, { x: x + step / 2, y }); break;
-          case 13: contours.push({ x: x + step, y: y + step / 2 }); break;
-          case 14: contours.push({ x: x + step / 2, y }); break;
-          default: break;
+    const neighbors = [
+      [1, 0], [1, 1], [0, 1], [-1, 1],
+      [-1, 0], [-1, -1], [0, -1], [1, -1],
+    ];
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === 1;
+    let start: [number, number] | null = null;
+    for (let y = 0; y < height && !start; y++) {
+      for (let x = 0; x < width; x++) {
+        if (inside(x, y)) {
+          start = [x, y];
+          break;
         }
       }
     }
-    return simplifyPath(contours, 1.5);
+    if (!start) return [];
+
+    const contour: Point[] = [];
+    let current = start;
+    let prevDir = 0;
+    const maxSteps = width * height * 4;
+
+    for (let step = 0; step < maxSteps; step++) {
+      contour.push({ x: current[0], y: current[1] });
+      let found = false;
+      for (let i = 0; i < 8; i++) {
+        const dir = (prevDir + 6 + i) % 8;
+        const nx = current[0] + neighbors[dir][0];
+        const ny = current[1] + neighbors[dir][1];
+        if (inside(nx, ny)) {
+          current = [nx, ny];
+          prevDir = dir;
+          found = true;
+          break;
+        }
+      }
+      if (!found || (current[0] === start[0] && current[1] === start[1] && contour.length > 10)) {
+        break;
+      }
+    }
+    return simplifyPath(contour, 1.5);
   };
 
 
