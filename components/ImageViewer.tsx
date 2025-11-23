@@ -24,7 +24,8 @@ interface ImageViewerProps {
   startActiveTimer: () => void;
   stopActiveTimer: () => void;
   wandActive: boolean;
-  onWandRequest: (point: Point, erode: boolean) => void;
+  wandTolerance: number;
+  onWandRequest: (point: Point, erode: boolean, phase: 'start' | 'move' | 'end') => void;
 }
 
 const isPointInPolygon = (point: Point, polygon: Point[]): boolean => {
@@ -43,7 +44,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   { 
     src, onTransformChange, isDrawingMode, annotations, annotationClasses, 
     selectedAnnotationClass, selectedAnnotationId, onAddAnnotation, onSelectAnnotation, imageDimensions, onActivity,
-    startActiveTimer, stopActiveTimer, wandActive, onWandRequest
+    startActiveTimer, stopActiveTimer, wandActive, wandTolerance, onWandRequest
   },
   ref
 ) => {
@@ -53,6 +54,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   const [currentPath, setCurrentPath] = useState<Point[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isHoveringImage, setIsHoveringImage] = useState(false);
+  const [cursorPos, setCursorPos] = useState<Point | null>(null);
   const isRefining = useRef(false);
   const lastRefineTs = useRef(0);
 
@@ -130,8 +132,30 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       ctx.stroke();
     }
 
+    // Draw Wand Cursor
+    if (wandActive && cursorPos) {
+      const cx = cursorPos.x * renderScaleX;
+      const cy = cursorPos.y * renderScaleY;
+      const r = wandTolerance * renderScaleX; // Assuming square pixels
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 2 / transform.scale;
+      ctx.stroke();
+      
+      // Inner dashed circle for better visibility
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.lineWidth = 1 / transform.scale;
+      ctx.setLineDash([4 / transform.scale, 4 / transform.scale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     ctx.restore();
-  }, [annotations, currentPath, transform, selectedAnnotationId, imageDimensions]);
+  }, [annotations, currentPath, transform, selectedAnnotationId, imageDimensions, wandActive, cursorPos, wandTolerance]);
 
   const getTransformedPoint = useCallback((clientX: number, clientY: number): Point => {
     const viewer = viewerRef.current;
@@ -194,7 +218,8 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
   const handleCanvasClick = (e: React.MouseEvent) => {
     if (wandActive) {
       const point = getTransformedPoint(e.clientX, e.clientY);
-      onWandRequest(point, e.shiftKey);
+      onWandRequest(point, e.shiftKey, 'start');
+      onWandRequest(point, e.shiftKey, 'end');
       return;
     }
     if (isDrawingMode || e.defaultPrevented) return;
@@ -214,14 +239,17 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
     if (wandActive) {
       isRefining.current = true;
       lastRefineTs.current = 0;
-      onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+      onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey, 'start');
       return;
     }
     if (isDrawingMode) handleDrawStart(e.clientX, e.clientY);
     else handlePanMouseDown(e);
   };
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (wandActive && isRefining.current) {
+        onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey, 'end');
+    }
     isRefining.current = false;
   };
 
@@ -231,7 +259,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       if (e.touches.length === 1) {
         isRefining.current = true;
         lastRefineTs.current = 0;
-        onWandRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false);
+        onWandRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false, 'start');
       }
       return;
     }
@@ -246,8 +274,8 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
     const handleMouseMove = (e: MouseEvent) => {
       if (wandActive && isRefining.current) {
         const now = performance.now();
-        if (now - lastRefineTs.current > 40) {
-          onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
+        if (now - lastRefineTs.current > 16) { // 60fps target
+          onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey, 'move');
           lastRefineTs.current = now;
         }
         return;
@@ -260,8 +288,8 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
         if (wandActive && isRefining.current) {
           const touch = e.touches[0];
           const now = performance.now();
-          if (now - lastRefineTs.current > 60) {
-            onWandRequest(getTransformedPoint(touch.clientX, touch.clientY), false);
+          if (now - lastRefineTs.current > 16) {
+            onWandRequest(getTransformedPoint(touch.clientX, touch.clientY), false, 'move');
             lastRefineTs.current = now;
           }
           return;
@@ -272,7 +300,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
     if (isDrawing || (wandActive && isRefining.current)) {
       window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleDrawEnd);
+      window.addEventListener('mouseup', handleDrawEnd); // Keep this for drawing mode cleanup
       window.addEventListener('touchmove', handleTouchMove);
       window.addEventListener('touchend', handleDrawEnd);
     }
@@ -287,12 +315,15 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
   const handleViewerMouseMove = (e: React.MouseEvent) => {
     onActivity();
+    if (wandActive) {
+      const point = getTransformedPoint(e.clientX, e.clientY);
+      setCursorPos(point);
+    } else if (cursorPos) {
+      setCursorPos(null);
+    }
+
     if (wandActive && isRefining.current) {
-      const now = performance.now();
-      if (now - lastRefineTs.current > 40) {
-        onWandRequest(getTransformedPoint(e.clientX, e.clientY), e.shiftKey);
-        lastRefineTs.current = now;
-      }
+      // Handled by window listener for smoother drag
       return;
     }
     if (isDrawingMode && imageDimensions) {
@@ -315,7 +346,8 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
 
   const showSpinner = !isPositioned;
   const imageOpacity = showSpinner ? 0 : 1;
-  const viewerCursorClass = isDrawingMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing';
+  let viewerCursorClass = isDrawingMode ? 'cursor-default' : 'cursor-grab active:cursor-grabbing';
+  if (wandActive) viewerCursorClass = 'cursor-none';
   
   const imageStyle: React.CSSProperties = {
     position: 'absolute',
@@ -350,6 +382,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       onTouchStart={handleTouchStart}
       onClick={handleCanvasClick}
       onMouseMove={handleViewerMouseMove}
+      onMouseLeave={() => setCursorPos(null)}
     >
       {showSpinner && (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">

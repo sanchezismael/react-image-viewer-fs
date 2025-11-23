@@ -175,8 +175,9 @@ const App: React.FC = () => {
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [wandTolerance, setWandTolerance] = useState<number>(15);
   const [wandMode, setWandMode] = useState<boolean>(false);
-  const wandImageDataRef = useRef<ImageData | null>(null);
-  const wandCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const brushMaskRef = useRef<Uint8Array | null>(null);
+  const brushMaskDimsRef = useRef<{ width: number, height: number } | null>(null);
+  const brushTargetIdRef = useRef<string | null>(null);
   const [lastDirectory, setLastDirectory] = useState<string>(() => {
     if (typeof window === 'undefined') return '';
     return localStorage.getItem('lastDirectory') || '';
@@ -202,51 +203,6 @@ const App: React.FC = () => {
   useEffect(() => {
     dashboardEntriesRef.current = dashboardEntries;
   }, [dashboardEntries]);
-
-  // Build pixel buffer for wand operations when image changes
-  useEffect(() => {
-    const buildData = async () => {
-      const url = imageFiles[currentIndex]?.url;
-      const dims = imageDimensions || allImageDimensions[currentIndex];
-      if (!url || !dims) {
-        wandImageDataRef.current = null;
-        return;
-      }
-
-      if (!wandCanvasRef.current) {
-        wandCanvasRef.current = document.createElement('canvas');
-      }
-      const canvas = wandCanvasRef.current;
-      canvas.width = dims.width;
-      canvas.height = dims.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        wandImageDataRef.current = null;
-        return;
-      }
-
-      await new Promise<void>((resolve) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          try {
-            wandImageDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          } catch {
-            wandImageDataRef.current = null;
-          }
-          resolve();
-        };
-        img.onerror = () => {
-          wandImageDataRef.current = null;
-          resolve();
-        };
-        img.src = url;
-      });
-    };
-    void buildData();
-  }, [currentIndex, imageFiles, imageDimensions, allImageDimensions]);
 
   // Preload neighbors to make navigation snappier
   useEffect(() => {
@@ -460,6 +416,13 @@ const App: React.FC = () => {
       setShowDirectoryBrowser(false);
 
       const filesData = await getFiles(dirPath);
+      
+      if (filesData.images.length === 0) {
+        toast.error('No images found in the selected directory');
+        setIsLoadingProject(false);
+        return;
+      }
+      
       setCurrentDirectory(dirPath);
       setLastDirectory(dirPath);
       if (typeof window !== 'undefined') {
@@ -775,123 +738,150 @@ const App: React.FC = () => {
     addAnnotation(annotationWithId);
   }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, addAnnotation]);
 
-  const regionGrow = useCallback((seed: Point, tolerance: number) => {
-    const data = wandImageDataRef.current;
-    if (!data) return null;
-    const { width, height, data: pixels } = data;
-    const sx = Math.floor(seed.x);
-    const sy = Math.floor(seed.y);
-    if (sx < 0 || sy < 0 || sx >= width || sy >= height) return null;
-
-    const idxSeed = (sy * width + sx) * 4;
-    const r0 = pixels[idxSeed];
-    const g0 = pixels[idxSeed + 1];
-    const b0 = pixels[idxSeed + 2];
-    const tolSq = tolerance * tolerance * 3;
-
-    const visited = new Uint8Array(width * height);
-    const mask = new Uint8Array(width * height);
-    const queueX: number[] = [sx];
-    const queueY: number[] = [sy];
-    visited[sy * width + sx] = 1;
-    mask[sy * width + sx] = 1;
-
-    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-    const maxPixels = Math.min(width * height, 500000);
-
-    while (queueX.length && queueX.length < maxPixels) {
-      const x = queueX.pop() as number;
-      const y = queueY.pop() as number;
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-        const idx = ny * width + nx;
-        if (visited[idx]) continue;
-        visited[idx] = 1;
-        const pIdx = idx * 4;
-        const dr = pixels[pIdx] - r0;
-        const dg = pixels[pIdx + 1] - g0;
-        const db = pixels[pIdx + 2] - b0;
-        const dist = dr * dr + dg * dg + db * db;
-        if (dist <= tolSq) {
-          mask[idx] = 1;
-          queueX.push(nx);
-          queueY.push(ny);
-        }
-      }
-    }
-    return { mask, width, height };
-  }, []);
-
-  const applyWand = useCallback((seed: Point, erode: boolean) => {
+  const applyBrush = useCallback((seed: Point, erode: boolean, phase: 'start' | 'move' | 'end') => {
     const dims = imageDimensions || allImageDimensions[currentIndex];
     if (!dims) return;
-    const region = regionGrow(seed, wandTolerance);
-    if (!region) {
-      toast.error('No image data available for wand.');
-      return;
-    }
-    const { mask, width, height } = region;
 
-    let targetId = selectedAnnotationId || null;
-    const anns = allAnnotations[currentIndex] || [];
-    if (!targetId) {
-      for (let i = anns.length - 1; i >= 0; i--) {
-        if (isPointInPolygon(seed, anns[i].points)) {
-          targetId = anns[i].id;
-          break;
+    // --- START PHASE ---
+    if (phase === 'start') {
+        let targetId = selectedAnnotationId || null;
+        const anns = allAnnotations[currentIndex] || [];
+
+        // If no selection, try to find one under cursor
+        if (!targetId) {
+            for (let i = anns.length - 1; i >= 0; i--) {
+                if (isPointInPolygon(seed, anns[i].points)) {
+                    targetId = anns[i].id;
+                    break;
+                }
+            }
         }
-      }
+
+        // If still no target and we are eroding, do nothing
+        if (!targetId && erode) return;
+
+        // If no target and expanding, check if we have a class selected
+        if (!targetId && !selectedAnnotationClass) {
+            toast.error('Select a class or an annotation to use the brush.');
+            return;
+        }
+
+        brushTargetIdRef.current = targetId;
+        brushMaskDimsRef.current = { width: dims.width, height: dims.height };
+        
+        // Initialize mask (Full Image Size to avoid drift/offset issues)
+        const size = dims.width * dims.height;
+        const mask = new Uint8Array(size);
+        
+        if (targetId) {
+            const ann = anns.find(a => a.id === targetId);
+            if (ann && ann.points.length > 2) {
+                // Rasterize existing annotation
+                const canvas = document.createElement('canvas');
+                canvas.width = dims.width;
+                canvas.height = dims.height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.beginPath();
+                    ctx.moveTo(ann.points[0].x, ann.points[0].y);
+                    for (let i = 1; i < ann.points.length; i++) ctx.lineTo(ann.points[i].x, ann.points[i].y);
+                    ctx.closePath();
+                    ctx.fillStyle = 'white';
+                    ctx.fill();
+                    const imgData = ctx.getImageData(0, 0, dims.width, dims.height);
+                    for (let i = 0; i < size; i++) {
+                        if (imgData.data[i * 4 + 3] > 128) mask[i] = 1;
+                    }
+                }
+            }
+        }
+        brushMaskRef.current = mask;
     }
 
-    const className = selectedAnnotationClass;
-    if (!targetId && !className) {
-      toast.error('Select a class or an annotation to use the wand.');
-      return;
+    // --- APPLY BRUSH (START & MOVE) ---
+    if (brushMaskRef.current && brushMaskDimsRef.current) {
+        const mask = brushMaskRef.current;
+        const { width, height } = brushMaskDimsRef.current;
+        const radius = wandTolerance;
+        const r2 = radius * radius;
+        const cx = Math.floor(seed.x);
+        const cy = Math.floor(seed.y);
+
+        const bx1 = Math.max(0, cx - Math.ceil(radius));
+        const by1 = Math.max(0, cy - Math.ceil(radius));
+        const bx2 = Math.min(width, cx + Math.ceil(radius) + 1);
+        const by2 = Math.min(height, cy + Math.ceil(radius) + 1);
+
+        let changed = false;
+        for (let y = by1; y < by2; y++) {
+            for (let x = bx1; x < bx2; x++) {
+                const dx = x - cx;
+                const dy = y - cy;
+                if (dx*dx + dy*dy <= r2) {
+                    const idx = y * width + x;
+                    if (erode) {
+                        if (mask[idx] === 1) {
+                            mask[idx] = 0;
+                            changed = true;
+                        }
+                    } else {
+                        if (mask[idx] === 0) {
+                            mask[idx] = 1;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (changed || phase === 'start') {
+            // Re-vectorize
+            // Optimization: marchingSquares is fast enough for 1080p, might be slow for 4k.
+            // But since we are in a loop, we have to do it.
+            const contour = marchingSquares(mask, width, height);
+            
+            // If empty result
+            if (contour.length < 3) {
+                if (brushTargetIdRef.current) {
+                     setAllAnnotations(prev => ({
+                        ...prev,
+                        [currentIndex]: (prev[currentIndex] || []).filter(a => a.id !== brushTargetIdRef.current)
+                     }));
+                     if (phase === 'end') {
+                        brushTargetIdRef.current = null;
+                        setSelectedAnnotationId(null);
+                     }
+                }
+                return;
+            }
+
+            // Simplify slightly to reduce point count but keep shape
+            const simplified = simplifyPath(contour, 0.5); 
+
+            if (brushTargetIdRef.current) {
+                setAllAnnotations(prev => ({
+                    ...prev,
+                    [currentIndex]: (prev[currentIndex] || []).map(a => a.id === brushTargetIdRef.current ? { ...a, points: simplified } : a)
+                }));
+            } else if (selectedAnnotationClass) {
+                // Create new annotation on first stroke
+                const id = `${Date.now()}-${Math.random()}`;
+                const ann = { id, className: selectedAnnotationClass, points: simplified };
+                setAllAnnotations(prev => ({ ...prev, [currentIndex]: [...(prev[currentIndex] || []), ann] }));
+                brushTargetIdRef.current = id;
+                setSelectedAnnotationId(id);
+            }
+        }
     }
 
-    let baseMask = new Uint8Array(width * height);
-    if (targetId) {
-      const ann = anns.find(a => a.id === targetId);
-      if (ann) {
-        baseMask = rasterizePolygon(ann.points, width, height);
-      }
+    // --- END PHASE ---
+    if (phase === 'end') {
+        brushMaskRef.current = null;
+        brushMaskDimsRef.current = null;
+        brushTargetIdRef.current = null;
     }
 
-    const resultMask = new Uint8Array(width * height);
-    for (let i = 0; i < mask.length; i++) {
-      const m = mask[i];
-      const b = baseMask[i];
-      resultMask[i] = erode ? (b && !m ? 1 : 0) : (b || m ? 1 : 0);
-    }
-
-    // quick check if empty
-    if (!resultMask.some(v => v === 1)) {
-      if (targetId) {
-        setAllAnnotations(prev => ({
-          ...prev,
-          [currentIndex]: (prev[currentIndex] || []).filter(a => a.id !== targetId)
-        }));
-      }
-      return;
-    }
-
-    const contour = marchingSquares(resultMask, width, height);
-    if (contour.length < 3) return;
-    const simple = simplifyPath(contour, 2);
-
-    if (targetId) {
-      setAllAnnotations(prev => ({
-        ...prev,
-        [currentIndex]: (prev[currentIndex] || []).map(a => a.id === targetId ? { ...a, points: simple } : a)
-      }));
-    } else if (className) {
-      const id = `${Date.now()}-${Math.random()}`;
-      const ann = { id, className, points: simple };
-      setAllAnnotations(prev => ({ ...prev, [currentIndex]: [...(prev[currentIndex] || []), ann] }));
-    }
-  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, regionGrow, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations]);
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations, setSelectedAnnotationId]);
 
   const handleDeleteAnnotationWrapper = useCallback((id: string) => {
     // Si la imagen estaba completada, desmarcarla al hacer cambios
@@ -1399,7 +1389,8 @@ const App: React.FC = () => {
             startActiveTimer={startActiveTimer}
             stopActiveTimer={stopActiveTimer}
             wandActive={wandMode}
-            onWandRequest={applyWand}
+            wandTolerance={wandTolerance}
+            onWandRequest={applyBrush}
           />
         ) : (
           <div className="text-center p-8">
