@@ -29,6 +29,7 @@ export interface FilesResponse {
   path: string;
   images: ImageFile[];
   jsonFiles: JsonFile[];
+  masks: JsonFile[]; // Reusing JsonFile interface as it has name and path
 }
 
 export interface Drive {

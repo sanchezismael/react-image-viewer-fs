@@ -5,9 +5,10 @@ import Toolbar from './components/Toolbar';
 import DashboardModal from './components/DashboardModal';
 import DirectoryBrowser from './components/DirectoryBrowser';
 import Confetti from './components/Confetti';
+import ConfirmationModal from './components/ConfirmationModal';
 import RocketLaunchAnimation from './components/RocketLaunchAnimation';
 import { TransformState } from './hooks/useImageTransform';
-import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, deleteImageAssets } from './utils/api';
+import { getFiles, readJsonFile, saveJsonFile, saveImageFile, saveTextFile, readTextFile, deleteImageAssets, getImageUrl } from './utils/api';
 import { DashboardEntry } from './types/dashboard';
 import { useTimer } from './hooks/useTimer';
 import { useProjectData } from './hooks/useProjectData';
@@ -183,6 +184,16 @@ const App: React.FC = () => {
     return localStorage.getItem('lastDirectory') || '';
   });
 
+  const [inlineMasks, setInlineMasks] = useState<Map<string, string>>(new Map());
+  const [maskFiles, setMaskFiles] = useState<Map<string, string>>(new Map());
+  const [showMaskConversionModal, setShowMaskConversionModal] = useState(false);
+  const [pendingMaskConversion, setPendingMaskConversion] = useState<{ imageBaseName: string, maskPath: string } | null>(null);
+
+  const dirtyIndicesRef = useRef<Set<number>>(new Set());
+  const markCurrentAsDirty = useCallback(() => {
+    dirtyIndicesRef.current.add(currentIndex);
+  }, [currentIndex]);
+
   const imageViewerRef = useRef<ImageViewerApi>(null);
   const saveInProgressRef = useRef<Promise<boolean> | null>(null);
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -203,6 +214,25 @@ const App: React.FC = () => {
   useEffect(() => {
     dashboardEntriesRef.current = dashboardEntries;
   }, [dashboardEntries]);
+
+  // Sync mask files from inline and external sources
+  useEffect(() => {
+    const updateMasks = async () => {
+      const combined = new Map(inlineMasks);
+      
+      if (outputPaths?.masks && outputPaths.masks !== currentDirectory) {
+        try {
+          const data = await getFiles(outputPaths.masks);
+          data.masks.forEach(m => combined.set(m.name, m.path));
+        } catch (error) {
+          console.warn('Failed to load external masks:', error);
+        }
+      }
+      setMaskFiles(combined);
+    };
+    
+    updateMasks();
+  }, [inlineMasks, outputPaths?.masks, currentDirectory]);
 
   // Preload neighbors to make navigation snappier
   useEffect(() => {
@@ -289,15 +319,23 @@ const App: React.FC = () => {
     const loadAnnotations = async () => {
       if (!imageFiles[currentIndex] || !outputPaths?.annotations) return;
       
-      // If we already have annotations for this index (even empty array), don't reload
-      if (allAnnotations[currentIndex] !== undefined) return;
-
       const imageBaseName = imageFiles[currentIndex].name.replace(/\.[^.]+$/, '');
       const jsonPath = joinPathSegments(outputPaths.annotations, `${imageBaseName}.json`);
       
+      const checkForMask = () => {
+        const maskName = `${imageBaseName}_mask.png`;
+        if (maskFiles.has(maskName)) {
+          setPendingMaskConversion({ imageBaseName, maskPath: maskFiles.get(maskName)! });
+          setShowMaskConversionModal(true);
+        }
+      };
+
+      // If we already have annotations for this index (even empty array), don't reload
+      if (allAnnotations[currentIndex] !== undefined) return;
+
       try {
         const data = await readJsonFile(jsonPath);
-        if (data && data.annotations && Array.isArray(data.annotations)) {
+        if (data && data.annotations && Array.isArray(data.annotations) && data.annotations.length > 0) {
           const loadedAnns = data.annotations.map((ann: any) => ({
             id: `${Date.now()}-${Math.random()}`,
             points: ann.points,
@@ -331,15 +369,17 @@ const App: React.FC = () => {
           }
         } else {
           setAllAnnotations(prev => ({ ...prev, [currentIndex]: [] }));
+          checkForMask();
         }
       } catch (e) {
         // File likely doesn't exist, set empty
         setAllAnnotations(prev => ({ ...prev, [currentIndex]: [] }));
+        checkForMask();
       }
     };
     
     loadAnnotations();
-  }, [currentIndex, imageFiles, outputPaths, allAnnotations, setAllAnnotations, annotationClasses, setAnnotationClasses, selectedAnnotationClass, setSelectedAnnotationClass]);
+  }, [currentIndex, imageFiles, outputPaths, allAnnotations, setAllAnnotations, annotationClasses, setAnnotationClasses, selectedAnnotationClass, setSelectedAnnotationClass, maskFiles]);
 
   // Effect to calculate annotation statistics
   useEffect(() => {
@@ -429,6 +469,11 @@ const App: React.FC = () => {
         localStorage.setItem('lastDirectory', dirPath);
       }
       setImageFiles(filesData.images);
+      
+      const maskMap = new Map<string, string>();
+      filesData.masks.forEach(m => maskMap.set(m.name, m.path));
+      setInlineMasks(maskMap);
+
       const defaultPaths = getDefaultOutputPaths(dirPath);
       // Note: loadPersistedOutputPaths logic moved inline or needs to be extracted
       // For now, assuming defaultPaths or re-implementing simple read
@@ -588,6 +633,7 @@ const App: React.FC = () => {
 
         const classIdMap = new Map(annotationClasses.map(cls => [cls.name, cls.id]));
         const operations: Promise<void>[] = [];
+        const isDirty = dirtyIndicesRef.current.has(currentIndex);
 
         let updatedDashboardEntries: DashboardEntry[] | null = null;
         if (!silent && effectiveOutputs.times) {
@@ -611,7 +657,7 @@ const App: React.FC = () => {
           operations.push(saveJsonFile(statsFilePath, updatedDashboardEntries));
         }
 
-        if (jsonPath) {
+        if (jsonPath && (isDirty || !silent)) {
           const exportData = {
             imageName,
             annotations: currentAnns.map(ann => ({
@@ -623,7 +669,7 @@ const App: React.FC = () => {
           operations.push(saveJsonFile(jsonPath, exportData));
         }
 
-        if (maskPath) {
+        if (maskPath && (isDirty || !silent)) {
           const dims = imageDimensions || allImageDimensions[currentIndex];
           if (dims) {
             if (!maskCanvasRef.current) {
@@ -665,6 +711,9 @@ const App: React.FC = () => {
         }
 
         await Promise.all(operations);
+        if (isDirty) {
+          dirtyIndicesRef.current.delete(currentIndex);
+        }
         if (!silent) toast.success('Saved successfully');
         return true;
       } catch (error) {
@@ -736,7 +785,8 @@ const App: React.FC = () => {
     const id = `${Date.now()}-${Math.random()}`;
     const annotationWithId = { ...newAnnotation, id, className: selectedAnnotationClass };
     addAnnotation(annotationWithId);
-  }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, addAnnotation]);
+    markCurrentAsDirty();
+  }, [currentIndex, selectedAnnotationClass, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, addAnnotation, markCurrentAsDirty]);
 
   const applyBrush = useCallback((seed: Point, erode: boolean, phase: 'start' | 'move' | 'end') => {
     const dims = imageDimensions || allImageDimensions[currentIndex];
@@ -863,6 +913,7 @@ const App: React.FC = () => {
                     ...prev,
                     [currentIndex]: (prev[currentIndex] || []).map(a => a.id === brushTargetIdRef.current ? { ...a, points: simplified } : a)
                 }));
+                markCurrentAsDirty();
             } else if (selectedAnnotationClass) {
                 // Create new annotation on first stroke
                 const id = `${Date.now()}-${Math.random()}`;
@@ -870,6 +921,7 @@ const App: React.FC = () => {
                 setAllAnnotations(prev => ({ ...prev, [currentIndex]: [...(prev[currentIndex] || []), ann] }));
                 brushTargetIdRef.current = id;
                 setSelectedAnnotationId(id);
+                markCurrentAsDirty();
             }
         }
     }
@@ -903,7 +955,8 @@ const App: React.FC = () => {
     }
     
     deleteAnnotation(id);
-  }, [currentIndex, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, deleteAnnotation]);
+    markCurrentAsDirty();
+  }, [currentIndex, completedImages, allAnnotationTimes, allActiveAnnotationTimes, resetInactivityTimer, setCompletedImages, setAnnotationTime, setActiveAnnotationTime, setIsTimerPaused, deleteAnnotation, markCurrentAsDirty]);
 
   const handleResizeAnnotation = useCallback((id: string, deltaPercent: number) => {
     const anns = allAnnotations[currentIndex] || [];
@@ -925,7 +978,8 @@ const App: React.FC = () => {
       ...prev,
       [currentIndex]: anns.map(a => a.id === id ? { ...a, points: scaledPoints } : a)
     }));
-  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations]);
+    markCurrentAsDirty();
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, setAllAnnotations, markCurrentAsDirty]);
 
   const simplifyPath = (points: Point[], tolerance = 1): Point[] => {
     if (points.length <= 2) return points;
@@ -988,21 +1042,26 @@ const App: React.FC = () => {
     return mask;
   };
 
-  const marchingSquares = (mask: Uint8Array, width: number, height: number): Point[] => {
+  const marchingSquares = (mask: Uint8Array, width: number, height: number, startPoint?: [number, number], targetVal: number = 1): Point[] => {
     const neighbors = [
       [1, 0], [1, 1], [0, 1], [-1, 1],
       [-1, 0], [-1, -1], [0, -1], [1, -1],
     ];
-    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === 1;
-    let start: [number, number] | null = null;
-    for (let y = 0; y < height && !start; y++) {
-      for (let x = 0; x < width; x++) {
-        if (inside(x, y)) {
-          start = [x, y];
-          break;
+    const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < width && y < height && mask[y * width + x] === targetVal;
+    
+    let start: [number, number] | null = startPoint || null;
+
+    if (!start) {
+      for (let y = 0; y < height && !start; y++) {
+        for (let x = 0; x < width; x++) {
+          if (inside(x, y)) {
+            start = [x, y];
+            break;
+          }
         }
       }
     }
+    
     if (!start) return [];
 
     const contour: Point[] = [];
@@ -1031,6 +1090,182 @@ const App: React.FC = () => {
     return simplifyPath(contour, 1.5);
   };
 
+  const handleConfirmMaskConversion = async () => {
+    if (!pendingMaskConversion) return;
+    setShowMaskConversionModal(false);
+    const { maskPath } = pendingMaskConversion;
+    const url = getImageUrl(maskPath);
+    
+    try {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.src = url;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      
+      const imgData = ctx.getImageData(0, 0, img.width, img.height);
+      const data = imgData.data;
+      const width = img.width;
+      const height = img.height;
+      const size = width * height;
+      const mask = new Uint8Array(size);
+      
+      let hasPixels = false;
+      for (let i = 0; i < size; i++) {
+        const r = data[i*4];
+        const g = data[i*4+1];
+        const b = data[i*4+2];
+        const a = data[i*4+3];
+        
+        if (a > 10) {
+          // Use max of channels to capture values like 1, 2, 3 in grayscale/indexed masks
+          const val = Math.max(r, g, b);
+          if (val > 0) {
+            mask[i] = val;
+            hasPixels = true;
+          }
+        }
+      }
+
+      if (!hasPixels) {
+        toast.error('The mask image appears to be empty or all black.');
+        return;
+      }
+      
+      const newAnnotations: Annotation[] = [];
+      // const visited = new Uint8Array(size); // Unused
+
+      // Helper to erase object from mask so we find the next one
+      const floodFillErase = (startX: number, startY: number, targetVal: number) => {
+        const stack = [[startX, startY]];
+        while (stack.length) {
+          const [cx, cy] = stack.pop()!;
+          const idx = cy * width + cx;
+          if (cx >= 0 && cx < width && cy >= 0 && cy < height && mask[idx] === targetVal) {
+            mask[idx] = 0; // Erase
+            stack.push([cx + 1, cy]);
+            stack.push([cx - 1, cy]);
+            stack.push([cx, cy + 1]);
+            stack.push([cx, cy - 1]);
+          }
+        }
+      };
+
+      const numberToWord = (num: number): string => {
+        const words = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'];
+        return words[num] || num.toString();
+      };
+
+      // Find all contours
+      let iterations = 0;
+      const MAX_ITERATIONS = 2000; // Safety break
+
+      while (iterations < MAX_ITERATIONS) {
+        let start: [number, number] | null = null;
+        let foundVal = 0;
+        // Scan for next object
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            if (mask[y * width + x] > 0) {
+              start = [x, y];
+              foundVal = mask[y * width + x];
+              break;
+            }
+          }
+          if (start) break;
+        }
+
+        if (!start) break; // No more objects
+
+        const contour = marchingSquares(mask, width, height, start, foundVal); // Pass start point and value
+        
+        if (contour.length > 2) {
+           const id = `${Date.now()}-${Math.random()}`;
+           const className = numberToWord(foundVal);
+           newAnnotations.push({
+             id,
+             className: className,
+             points: contour
+           });
+        }
+
+        // Erase the object we just found (or the noise)
+        floodFillErase(start[0], start[1], foundVal);
+        iterations++;
+      }
+      
+      if (newAnnotations.length > 0) {
+        // Update classes logic
+        const newClassesMap = new Map(annotationClasses.map(c => [c.name, c]));
+        const addedClasses: AnnotationClass[] = [];
+        
+        newAnnotations.forEach(ann => {
+            if (!newClassesMap.has(ann.className)) {
+                const words = ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'];
+                let id = words.indexOf(ann.className);
+                if (id === -1) id = parseInt(ann.className) || Date.now();
+                
+                const newClass = {
+                    id: id,
+                    name: ann.className,
+                    color: PALETTE[id % PALETTE.length] || PALETTE[0]
+                };
+                newClassesMap.set(ann.className, newClass);
+                addedClasses.push(newClass);
+            }
+        });
+
+        if (addedClasses.length > 0) {
+            setAnnotationClasses(prev => [...prev, ...addedClasses]);
+        }
+
+        setAllAnnotations(prev => ({
+          ...prev,
+          [currentIndex]: newAnnotations
+        }));
+        markCurrentAsDirty();
+
+        // Immediate Save
+        if (outputPaths?.annotations) {
+             const imageBaseName = imageFiles[currentIndex].name.replace(/\.[^.]+$/, '');
+             const jsonPath = joinPathSegments(outputPaths.annotations, `${imageBaseName}.json`);
+             
+             const exportData = {
+                imageName: imageFiles[currentIndex].name,
+                annotations: newAnnotations.map(ann => {
+                    const cls = newClassesMap.get(ann.className);
+                    return {
+                        className: ann.className,
+                        classId: cls ? cls.id : 0,
+                        points: ann.points
+                    };
+                })
+             };
+             
+             await saveJsonFile(jsonPath, exportData);
+             toast.success(`Generated and saved ${newAnnotations.length} annotations`);
+        } else {
+             toast.success(`Generated ${newAnnotations.length} annotations`);
+        }
+      } else {
+        toast.error('Could not generate valid annotations from mask');
+      }
+    } catch (error) {
+      console.error('Error converting mask:', error);
+      toast.error('Failed to convert mask to annotations');
+    } finally {
+      setPendingMaskConversion(null);
+    }
+  };
 
   const handleTransformChange = useCallback((newTransform: TransformState) => setActiveTransform(newTransform), []);
   
@@ -1316,6 +1551,17 @@ const App: React.FC = () => {
           onClose={closeDashboard}
         />
       )}
+
+      <ConfirmationModal
+        isOpen={showMaskConversionModal}
+        title="Generate Annotations from Mask?"
+        message="This image has an associated mask file but no annotations. Would you like to generate annotations from the mask?"
+        onConfirm={handleConfirmMaskConversion}
+        onCancel={() => {
+          setShowMaskConversionModal(false);
+          setPendingMaskConversion(null);
+        }}
+      />
 
       {hasImages && (
         <Toolbar

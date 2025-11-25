@@ -131,6 +131,7 @@ app.get('/api/files', async (req, res) => {
 
     const images = [];
     const jsonFiles = [];
+    const masks = [];
 
     // Hard guard to avoid blowing up on huge directories
     const MAX_ENTRIES = 2000;
@@ -144,9 +145,11 @@ app.get('/api/files', async (req, res) => {
 
       const ext = path.extname(item.name).toLowerCase();
 
-      const isImage = ALLOWED_IMAGE_EXTENSIONS.includes(ext) && !item.name.endsWith('_mask.png');
+      const isMask = item.name.endsWith('_mask.png');
+      const isImage = ALLOWED_IMAGE_EXTENSIONS.includes(ext) && !isMask;
       const isJson = ext === '.json';
-      if (!isImage && !isJson) continue;
+      
+      if (!isImage && !isJson && !isMask) continue;
 
       const fullPath = path.join(dirPath, item.name);
       processed += 1;
@@ -162,6 +165,8 @@ app.get('/api/files', async (req, res) => {
             });
           } else if (isJson) {
             jsonFiles.push({ name: item.name, path: fullPath });
+          } else if (isMask) {
+            masks.push({ name: item.name, path: fullPath });
           }
         })()
       );
@@ -171,11 +176,13 @@ app.get('/api/files', async (req, res) => {
 
     images.sort((a, b) => a.name.localeCompare(b.name));
     jsonFiles.sort((a, b) => a.name.localeCompare(b.name));
+    masks.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       path: dirPath,
       images,
       jsonFiles,
+      masks,
     });
   } catch (error) {
     handleError(res, error, 'Failed to load files');
