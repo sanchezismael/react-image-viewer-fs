@@ -224,6 +224,8 @@ const App: React.FC = () => {
         try {
           const data = await getFiles(outputPaths.masks);
           data.masks.forEach(m => combined.set(m.name, m.path));
+          // Also include regular images from the masks folder as potential masks
+          data.images.forEach(m => combined.set(m.name, m.path));
         } catch (error) {
           console.warn('Failed to load external masks:', error);
         }
@@ -323,15 +325,38 @@ const App: React.FC = () => {
       const jsonPath = joinPathSegments(outputPaths.annotations, `${imageBaseName}.json`);
       
       const checkForMask = () => {
-        const maskName = `${imageBaseName}_mask.png`;
-        if (maskFiles.has(maskName)) {
-          setPendingMaskConversion({ imageBaseName, maskPath: maskFiles.get(maskName)! });
+        let exactMatchPath: string | null = null;
+
+        for (const [maskName, maskPath] of maskFiles.entries()) {
+          const maskBaseName = maskName.replace(/\.[^.]+$/, '');
+          
+          // Check for _mask suffix (highest priority)
+          if (maskBaseName === `${imageBaseName}_mask`) {
+            setPendingMaskConversion({ imageBaseName, maskPath });
+            setShowMaskConversionModal(true);
+            return;
+          }
+          
+          // Check for exact base name match (lower priority)
+          if (maskBaseName === imageBaseName) {
+            exactMatchPath = maskPath;
+          }
+        }
+
+        if (exactMatchPath) {
+          setPendingMaskConversion({ imageBaseName, maskPath: exactMatchPath });
           setShowMaskConversionModal(true);
         }
       };
 
-      // If we already have annotations for this index (even empty array), don't reload
-      if (allAnnotations[currentIndex] !== undefined) return;
+      // If we already have annotations for this index
+      if (allAnnotations[currentIndex] !== undefined) {
+        // If empty, check for mask again (in case masks loaded late)
+        if (allAnnotations[currentIndex].length === 0) {
+          checkForMask();
+        }
+        return;
+      }
 
       try {
         const data = await readJsonFile(jsonPath);
