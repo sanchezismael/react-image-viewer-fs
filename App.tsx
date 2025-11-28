@@ -179,15 +179,12 @@ const App: React.FC = () => {
   const brushMaskRef = useRef<Uint8Array | null>(null);
   const brushMaskDimsRef = useRef<{ width: number, height: number } | null>(null);
   const brushTargetIdRef = useRef<string | null>(null);
-  const [lastDirectory, setLastDirectory] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    return localStorage.getItem('lastDirectory') || '';
-  });
-
-  const [inlineMasks, setInlineMasks] = useState<Map<string, string>>(new Map());
-  const [maskLookup, setMaskLookup] = useState<Map<string, string>>(new Map());
+  const lastBrushPointRef = useRef<Point | null>(null); // Track last point for interpolation
   const [showMaskConversionModal, setShowMaskConversionModal] = useState(false);
   const [pendingMaskConversion, setPendingMaskConversion] = useState<{ imageBaseName: string, maskPath: string } | null>(null);
+  const [inlineMasks, setInlineMasks] = useState<Map<string, string>>(new Map());
+  const [maskLookup, setMaskLookup] = useState<Map<string, string>>(new Map());
+  const [lastDirectory, setLastDirectory] = useState('');
 
   const dirtyIndicesRef = useRef<Set<number>>(new Set());
   const markCurrentAsDirty = useCallback(() => {
@@ -838,6 +835,7 @@ const App: React.FC = () => {
 
         brushTargetIdRef.current = targetId;
         brushMaskDimsRef.current = { width: dims.width * SCALE, height: dims.height * SCALE };
+        lastBrushPointRef.current = seed; // Initialize last point
 
         // Initialize mask (Scaled Image Size)
         const size = (dims.width * SCALE) * (dims.height * SCALE);
@@ -877,35 +875,51 @@ const App: React.FC = () => {
         const { width, height } = brushMaskDimsRef.current;
         const radius = wandTolerance * SCALE;
         const r2 = radius * radius;
-        const cx = Math.floor(seed.x * SCALE);
-        const cy = Math.floor(seed.y * SCALE);
-
-        const bx1 = Math.max(0, cx - Math.ceil(radius));
-        const by1 = Math.max(0, cy - Math.ceil(radius));
-        const bx2 = Math.min(width, cx + Math.ceil(radius) + 1);
-        const by2 = Math.min(height, cy + Math.ceil(radius) + 1);
-
+        
+        // Interpolation logic
+        const startPoint = lastBrushPointRef.current || seed;
+        const endPoint = seed;
+        const dist = Math.sqrt(Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2));
+        const steps = Math.ceil(dist * SCALE); // One step per pixel roughly
+        
         let changed = false;
-        for (let y = by1; y < by2; y++) {
-            for (let x = bx1; x < bx2; x++) {
-                const dx = x - cx;
-                const dy = y - cy;
-                if (dx*dx + dy*dy <= r2) {
-                    const idx = y * width + x;
-                    if (erode) {
-                        if (mask[idx] === 1) {
-                            mask[idx] = 0;
-                            changed = true;
-                        }
-                    } else {
-                        if (mask[idx] === 0) {
-                            mask[idx] = 1;
-                            changed = true;
+
+        for (let i = 0; i <= steps; i++) {
+            const t = steps === 0 ? 0 : i / steps;
+            const lx = startPoint.x + (endPoint.x - startPoint.x) * t;
+            const ly = startPoint.y + (endPoint.y - startPoint.y) * t;
+            
+            const cx = Math.floor(lx * SCALE);
+            const cy = Math.floor(ly * SCALE);
+
+            const bx1 = Math.max(0, cx - Math.ceil(radius));
+            const by1 = Math.max(0, cy - Math.ceil(radius));
+            const bx2 = Math.min(width, cx + Math.ceil(radius) + 1);
+            const by2 = Math.min(height, cy + Math.ceil(radius) + 1);
+
+            for (let y = by1; y < by2; y++) {
+                for (let x = bx1; x < bx2; x++) {
+                    const dx = x - cx;
+                    const dy = y - cy;
+                    if (dx*dx + dy*dy <= r2) {
+                        const idx = y * width + x;
+                        if (erode) {
+                            if (mask[idx] === 1) {
+                                mask[idx] = 0;
+                                changed = true;
+                            }
+                        } else {
+                            if (mask[idx] === 0) {
+                                mask[idx] = 1;
+                                changed = true;
+                            }
                         }
                     }
                 }
             }
         }
+        
+        lastBrushPointRef.current = seed; // Update last point
 
         if (changed || phase === 'start') {
             // Re-vectorize
@@ -954,6 +968,7 @@ const App: React.FC = () => {
         brushMaskRef.current = null;
         brushMaskDimsRef.current = null;
         brushTargetIdRef.current = null;
+        lastBrushPointRef.current = null;
     }
 
   }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations, setSelectedAnnotationId]);  const handleDeleteAnnotationWrapper = useCallback((id: string) => {

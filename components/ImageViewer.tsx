@@ -259,7 +259,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
       if (e.touches.length === 1) {
         isRefining.current = true;
         lastRefineTs.current = 0;
-        onWandRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), false, 'start');
+        onWandRequest(getTransformedPoint(e.touches[0].clientX, e.touches[0].clientY), e.shiftKey, 'start');
       }
       return;
     }
@@ -289,7 +289,7 @@ const ImageViewer: React.ForwardRefRenderFunction<ImageViewerApi, ImageViewerPro
           const touch = e.touches[0];
           const now = performance.now();
           if (now - lastRefineTs.current > 16) {
-            onWandRequest(getTransformedPoint(touch.clientX, touch.clientY), false, 'move');
+            onWandRequest(getTransformedPoint(touch.clientX, touch.clientY), e.shiftKey, 'move');
             lastRefineTs.current = now;
           }
           return;
