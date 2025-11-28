@@ -184,7 +184,7 @@ const App: React.FC = () => {
   const [pendingMaskConversion, setPendingMaskConversion] = useState<{ imageBaseName: string, maskPath: string } | null>(null);
   const [inlineMasks, setInlineMasks] = useState<Map<string, string>>(new Map());
   const [maskLookup, setMaskLookup] = useState<Map<string, string>>(new Map());
-  const [lastDirectory, setLastDirectory] = useState('');
+  const [lastDirectory, setLastDirectory] = useState(() => localStorage.getItem('lastDirectory') || '');
 
   const dirtyIndicesRef = useRef<Set<number>>(new Set());
   const markCurrentAsDirty = useCallback(() => {
