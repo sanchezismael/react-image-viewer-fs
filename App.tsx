@@ -809,6 +809,9 @@ const App: React.FC = () => {
     const dims = imageDimensions || allImageDimensions[currentIndex];
     if (!dims) return;
 
+    // Use 2x super-sampling to minimize grid snapping errors (the "jump") and improve precision.
+    const SCALE = 2;
+
     // --- START PHASE ---
     if (phase === 'start') {
         let targetId = selectedAnnotationId || null;
@@ -834,30 +837,33 @@ const App: React.FC = () => {
         }
 
         brushTargetIdRef.current = targetId;
-        brushMaskDimsRef.current = { width: dims.width, height: dims.height };
-        
-        // Initialize mask (Full Image Size to avoid drift/offset issues)
-        const size = dims.width * dims.height;
+        brushMaskDimsRef.current = { width: dims.width * SCALE, height: dims.height * SCALE };
+
+        // Initialize mask (Scaled Image Size)
+        const size = (dims.width * SCALE) * (dims.height * SCALE);
         const mask = new Uint8Array(size);
-        
+
         if (targetId) {
             const ann = anns.find(a => a.id === targetId);
             if (ann && ann.points.length > 2) {
-                // Rasterize existing annotation
+                // Rasterize existing annotation at higher resolution
                 const canvas = document.createElement('canvas');
-                canvas.width = dims.width;
-                canvas.height = dims.height;
+                canvas.width = dims.width * SCALE;
+                canvas.height = dims.height * SCALE;
                 const ctx = canvas.getContext('2d');
                 if (ctx) {
+                    ctx.scale(SCALE, SCALE); // Scale drawing operations
                     ctx.beginPath();
                     ctx.moveTo(ann.points[0].x, ann.points[0].y);
                     for (let i = 1; i < ann.points.length; i++) ctx.lineTo(ann.points[i].x, ann.points[i].y);
                     ctx.closePath();
                     ctx.fillStyle = 'white';
                     ctx.fill();
-                    const imgData = ctx.getImageData(0, 0, dims.width, dims.height);
+                    
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                     for (let i = 0; i < size; i++) {
-                        if (imgData.data[i * 4 + 3] > 128) mask[i] = 1;
+                        // Use a lower threshold to capture anti-aliased edges better
+                        if (imgData.data[i * 4 + 3] > 64) mask[i] = 1;
                     }
                 }
             }
@@ -869,10 +875,10 @@ const App: React.FC = () => {
     if (brushMaskRef.current && brushMaskDimsRef.current) {
         const mask = brushMaskRef.current;
         const { width, height } = brushMaskDimsRef.current;
-        const radius = wandTolerance;
+        const radius = wandTolerance * SCALE;
         const r2 = radius * radius;
-        const cx = Math.floor(seed.x);
-        const cy = Math.floor(seed.y);
+        const cx = Math.floor(seed.x * SCALE);
+        const cy = Math.floor(seed.y * SCALE);
 
         const bx1 = Math.max(0, cx - Math.ceil(radius));
         const by1 = Math.max(0, cy - Math.ceil(radius));
@@ -903,10 +909,8 @@ const App: React.FC = () => {
 
         if (changed || phase === 'start') {
             // Re-vectorize
-            // Optimization: marchingSquares is fast enough for 1080p, might be slow for 4k.
-            // But since we are in a loop, we have to do it.
             const contour = marchingSquares(mask, width, height);
-            
+
             // If empty result
             if (contour.length < 3) {
                 if (brushTargetIdRef.current) {
@@ -922,19 +926,21 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Simplify slightly to reduce point count but keep shape
-            const simplified = simplifyPath(contour, 0.5); 
+            // Scale down points
+            const scaledContour = contour.map(p => ({ x: p.x / SCALE, y: p.y / SCALE }));
 
+            // NO SIMPLIFICATION to preserve exact shape and avoid shrinking
+            
             if (brushTargetIdRef.current) {
                 setAllAnnotations(prev => ({
                     ...prev,
-                    [currentIndex]: (prev[currentIndex] || []).map(a => a.id === brushTargetIdRef.current ? { ...a, points: simplified } : a)
+                    [currentIndex]: (prev[currentIndex] || []).map(a => a.id === brushTargetIdRef.current ? { ...a, points: scaledContour } : a)
                 }));
                 markCurrentAsDirty();
             } else if (selectedAnnotationClass) {
                 // Create new annotation on first stroke
                 const id = `${Date.now()}-${Math.random()}`;
-                const ann = { id, className: selectedAnnotationClass, points: simplified };
+                const ann = { id, className: selectedAnnotationClass, points: scaledContour };
                 setAllAnnotations(prev => ({ ...prev, [currentIndex]: [...(prev[currentIndex] || []), ann] }));
                 brushTargetIdRef.current = id;
                 setSelectedAnnotationId(id);
@@ -950,9 +956,7 @@ const App: React.FC = () => {
         brushTargetIdRef.current = null;
     }
 
-  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations, setSelectedAnnotationId]);
-
-  const handleDeleteAnnotationWrapper = useCallback((id: string) => {
+  }, [allAnnotations, currentIndex, imageDimensions, allImageDimensions, selectedAnnotationClass, selectedAnnotationId, wandTolerance, setAllAnnotations, setSelectedAnnotationId]);  const handleDeleteAnnotationWrapper = useCallback((id: string) => {
     // Si la imagen estaba completada, desmarcarla al hacer cambios
     if (completedImages[currentIndex]) {
       setCompletedImages(prev => {
@@ -1100,14 +1104,12 @@ const App: React.FC = () => {
           break;
         }
       }
-      if (!found || (current[0] === start[0] && current[1] === start[1] && contour.length > 10)) {
-        break;
+        if (!found || (current[0] === start[0] && current[1] === start[1] && contour.length > 10)) {
+          break;
+        }
       }
-    }
-    return simplifyPath(contour, 1.5);
-  };
-
-  const handleConfirmMaskConversion = async () => {
+      return contour;
+    };  const handleConfirmMaskConversion = async () => {
     if (!pendingMaskConversion) return;
     setShowMaskConversionModal(false);
     const { maskPath } = pendingMaskConversion;
@@ -1203,18 +1205,17 @@ const App: React.FC = () => {
 
         if (!start) break; // No more objects
 
-        const contour = marchingSquares(mask, width, height, start, foundVal); // Pass start point and value
-        
-        if (contour.length > 2) {
-           const id = `${Date.now()}-${Math.random()}`;
-           const className = numberToWord(foundVal);
-           newAnnotations.push({
-             id,
-             className: className,
-             points: contour
-           });
-        }
-
+          const contour = marchingSquares(mask, width, height, start, foundVal); // Pass start point and value
+          
+          if (contour.length > 2) {
+             const id = `${Date.now()}-${Math.random()}`;
+             const className = numberToWord(foundVal);
+             newAnnotations.push({
+               id,
+               className: className,
+               points: contour
+             });
+          }
         // Erase the object we just found (or the noise)
         floodFillErase(start[0], start[1], foundVal);
         iterations++;
