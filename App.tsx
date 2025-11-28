@@ -185,7 +185,7 @@ const App: React.FC = () => {
   });
 
   const [inlineMasks, setInlineMasks] = useState<Map<string, string>>(new Map());
-  const [maskFiles, setMaskFiles] = useState<Map<string, string>>(new Map());
+  const [maskLookup, setMaskLookup] = useState<Map<string, string>>(new Map());
   const [showMaskConversionModal, setShowMaskConversionModal] = useState(false);
   const [pendingMaskConversion, setPendingMaskConversion] = useState<{ imageBaseName: string, maskPath: string } | null>(null);
 
@@ -218,25 +218,30 @@ const App: React.FC = () => {
   // Sync mask files from inline and external sources
   useEffect(() => {
     const updateMasks = async () => {
-      const combined = new Map(inlineMasks);
+      const lookup = new Map<string, string>();
       
+      const add = (name: string, path: string) => {
+        const base = name.replace(/\.[^.]+$/, '');
+        lookup.set(base, path);
+      };
+
+      inlineMasks.forEach((path, name) => add(name, path));
+
       if (outputPaths?.masks && outputPaths.masks !== currentDirectory) {
         try {
           const data = await getFiles(outputPaths.masks);
-          data.masks.forEach(m => combined.set(m.name, m.path));
+          data.masks.forEach(m => add(m.name, m.path));
           // Also include regular images from the masks folder as potential masks
-          data.images.forEach(m => combined.set(m.name, m.path));
+          data.images.forEach(m => add(m.name, m.path));
         } catch (error) {
           console.warn('Failed to load external masks:', error);
         }
       }
-      setMaskFiles(combined);
+      setMaskLookup(lookup);
     };
-    
-    updateMasks();
-  }, [inlineMasks, outputPaths?.masks, currentDirectory]);
 
-  // Preload neighbors to make navigation snappier
+    updateMasks();
+  }, [inlineMasks, outputPaths?.masks, currentDirectory]);  // Preload neighbors to make navigation snappier
   useEffect(() => {
     if (!imageFiles.length) return;
   const preload = (idx: number) => {
@@ -325,31 +330,20 @@ const App: React.FC = () => {
       const jsonPath = joinPathSegments(outputPaths.annotations, `${imageBaseName}.json`);
       
       const checkForMask = () => {
-        let exactMatchPath: string | null = null;
-
-        for (const [maskName, maskPath] of maskFiles.entries()) {
-          const maskBaseName = maskName.replace(/\.[^.]+$/, '');
-          
-          // Check for _mask suffix (highest priority)
-          if (maskBaseName === `${imageBaseName}_mask`) {
-            setPendingMaskConversion({ imageBaseName, maskPath });
-            setShowMaskConversionModal(true);
-            return;
-          }
-          
-          // Check for exact base name match (lower priority)
-          if (maskBaseName === imageBaseName) {
-            exactMatchPath = maskPath;
-          }
+        // Check for _mask suffix (highest priority)
+        const maskSuffix = `${imageBaseName}_mask`;
+        if (maskLookup.has(maskSuffix)) {
+          setPendingMaskConversion({ imageBaseName, maskPath: maskLookup.get(maskSuffix)! });
+          setShowMaskConversionModal(true);
+          return;
         }
 
-        if (exactMatchPath) {
-          setPendingMaskConversion({ imageBaseName, maskPath: exactMatchPath });
+        // Check for exact base name match (lower priority)
+        if (maskLookup.has(imageBaseName)) {
+          setPendingMaskConversion({ imageBaseName, maskPath: maskLookup.get(imageBaseName)! });
           setShowMaskConversionModal(true);
         }
-      };
-
-      // If we already have annotations for this index
+      };      // If we already have annotations for this index
       if (allAnnotations[currentIndex] !== undefined) {
         // If empty, check for mask again (in case masks loaded late)
         if (allAnnotations[currentIndex].length === 0) {
@@ -373,8 +367,8 @@ const App: React.FC = () => {
           const newClasses = new Set(annotationClasses.map(c => c.name));
           let updatedClasses = [...annotationClasses];
           let changed = false;
-          
-          loadedAnns.forEach((ann: any) => {
+
+          data.annotations.forEach((ann: any) => {
             if (!newClasses.has(ann.className)) {
               newClasses.add(ann.className);
               updatedClasses.push({
@@ -384,9 +378,7 @@ const App: React.FC = () => {
               });
               changed = true;
             }
-          });
-          
-          if (changed) {
+          });          if (changed) {
             setAnnotationClasses(updatedClasses);
             if (!selectedAnnotationClass && updatedClasses.length > 0) {
               setSelectedAnnotationClass(updatedClasses[0].name);
@@ -404,7 +396,7 @@ const App: React.FC = () => {
     };
     
     loadAnnotations();
-  }, [currentIndex, imageFiles, outputPaths, allAnnotations, setAllAnnotations, annotationClasses, setAnnotationClasses, selectedAnnotationClass, setSelectedAnnotationClass, maskFiles]);
+  }, [currentIndex, imageFiles, outputPaths, allAnnotations, setAllAnnotations, annotationClasses, setAnnotationClasses, selectedAnnotationClass, setSelectedAnnotationClass, maskLookup]);
 
   // Effect to calculate annotation statistics
   useEffect(() => {
